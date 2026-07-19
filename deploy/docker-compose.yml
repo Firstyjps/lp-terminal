@@ -1,0 +1,42 @@
+# lp-terminal production stack.
+# Run from this directory: `docker compose up -d`
+# Needs `deploy/.env` (NOT committed) with:
+#   RPC=<private Robinhood Chain RPC url>   # used by the indexer AND the /rpc proxy
+# Build the frontend first (repo root, RPC unset): `npm run build`
+# `proxy-net` is the external network Nginx Proxy Manager lives on.
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    container_name: lp-web
+    restart: unless-stopped
+    environment:
+      RPC_UPSTREAM: ${RPC}
+    volumes:
+      - ../dist:/usr/share/nginx/html:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      - indexer
+    networks:
+      - proxy-net
+      - internal
+
+  # node:sqlite needs node >= 22.13 — newer than the host node, hence a container.
+  # node_modules is installed on the host (linux x64); tsx/esbuild work as-is.
+  indexer:
+    image: node:22-bookworm-slim
+    container_name: lp-indexer
+    restart: unless-stopped
+    working_dir: /app
+    command: ["npx", "tsx", "indexer/main.ts"]
+    environment:
+      RPC: ${RPC}
+    volumes:
+      - ..:/app
+    networks:
+      - internal
+
+networks:
+  proxy-net:
+    external: true
+  internal: {}

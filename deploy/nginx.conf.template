@@ -1,0 +1,60 @@
+# lp-terminal — production nginx (container `lp-web`)
+# Serves the static dist and mirrors the dev-server reverse proxies
+# (vite.config.ts `proxy`): the browser only ever talks to this origin.
+# ${RPC_UPSTREAM} is substituted from the container env by the official
+# nginx image's envsubst entrypoint — the RPC key never enters the bundle.
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # chain reads — the only secret; key stays in this container's env
+    location = /rpc {
+        proxy_pass ${RPC_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header Host $proxy_host;
+    }
+
+    # third-party data APIs, same prefixes as the vite dev proxy
+    location /kyber-setting/ {
+        proxy_pass https://ks-setting.kyberswap.com/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host ks-setting.kyberswap.com;
+    }
+    location /kyber/ {
+        proxy_pass https://aggregator-api.kyberswap.com/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host aggregator-api.kyberswap.com;
+    }
+    location /dexscreener/ {
+        proxy_pass https://api.dexscreener.com/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host api.dexscreener.com;
+    }
+    location /goldsky/ {
+        proxy_pass https://api.goldsky.com/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host api.goldsky.com;
+    }
+
+    # pool indexer (compose service `indexer`) — serves /api/* itself, no strip
+    location /api/ {
+        proxy_pass http://indexer:8787;
+        proxy_set_header Host $host;
+    }
+}
