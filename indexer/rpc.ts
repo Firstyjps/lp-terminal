@@ -1,4 +1,4 @@
-import { createPublicClient, defineChain, http, type PublicClient } from 'viem'
+import { createPublicClient, defineChain, http, type PublicClient, type Transport } from 'viem'
 import { log, PUBLIC_RPC, TUNE, rpcUrl, sleep } from './config'
 
 // duplicated from src/config/chain.ts — that module imports src/config/env.ts
@@ -16,9 +16,26 @@ export const usingPrivateRpc = url !== PUBLIC_RPC
 // timeout is deliberately tight: a healthy 400-call aggregate answers in 2-4s
 // (measured 2026-07-16); a stalled attempt should fail fast and retry, not
 // pin the whole boot for 30s. Bad chunks degrade to sub-chunks in mc().
+const privateHttp = http(url, { timeout: 10_000, retryCount: 2, retryDelay: 400 })
+// getLogs windows are 9k blocks (catalog.ts) but Alchemy's free tier rejects
+// eth_getLogs beyond a 10-block range (-32600), so log queries go to the
+// chain's public RPC — slower but uncapped — and every other read stays on
+// the private RPC.
+const publicHttp = http(PUBLIC_RPC, { timeout: 20_000, retryCount: 2, retryDelay: 400 })
+const splitLogs: Transport = (opts) => {
+  const priv = privateHttp(opts)
+  const pub = publicHttp(opts)
+  return {
+    ...priv,
+    request: ((args: { method: string }, options: unknown) =>
+      args.method === 'eth_getLogs'
+        ? (pub.request as (a: unknown, o: unknown) => Promise<unknown>)(args, options)
+        : (priv.request as (a: unknown, o: unknown) => Promise<unknown>)(args, options)) as typeof priv.request,
+  }
+}
 export const pc: PublicClient = createPublicClient({
   chain: robinhood,
-  transport: http(url, { timeout: 10_000, retryCount: 2, retryDelay: 400 }),
+  transport: usingPrivateRpc ? splitLogs : publicHttp,
 })
 
 /** error text safe to log — the RPC url (secret) is redacted */
