@@ -81,6 +81,7 @@ export function PoolsTab() {
   const [proto, setProto] = useState<ProtoFilter>('all')
   const [uniQuery, setUniQuery] = useState('') // '' = whole catalog by TVL (index) / WETH pools (fallback)
   const [hideDust, setHideDust] = useState(true) // 95% of the uniswap catalog is <$1k meme dust
+  const [hideSus, setHideSus] = useState(true) // indexer-flagged fake-TVL pools (scam pricing)
   const [minTvlStr, setMinTvlStr] = useState('')
   const [minVolStr, setMinVolStr] = useState('')
   const [statsOnly, setStatsOnly] = useState(false)
@@ -154,6 +155,7 @@ export function PoolsTab() {
     if (watchOnly && !watch.has(p.address.toLowerCase())) return false
     if (proto !== 'all' && p.protocol !== proto) return false
     const s = statOf(p)
+    if (hideSus && s?.sus) return false
     if (minTvl > 0 && !((s?.liqUsd ?? 0) >= minTvl)) return false
     if (minVol > 0 && !((s?.vol24hUsd ?? 0) >= minVol)) return false
     if (statsOnly && s?.vol24hUsd == null) return false
@@ -214,6 +216,9 @@ export function PoolsTab() {
         ))}
         <button className={`chip ${hideDust ? 'on' : ''}`} onClick={() => setHideDust(!hideDust)} title={t('pools.hideDustTip')}>
           {t('pools.hideDust')}
+        </button>
+        <button className={`chip ${hideSus ? 'on' : ''}`} onClick={() => setHideSus(!hideSus)} title={t('pools.hideSusTip')}>
+          {t('pools.hideSus')}
         </button>
         {user && mySet.size > 0 && (
           <button className={`chip ${onlyMine ? 'on' : ''}`} onClick={() => setOnlyMine(!onlyMine)}>

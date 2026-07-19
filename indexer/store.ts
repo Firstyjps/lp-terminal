@@ -65,6 +65,22 @@ CREATE TABLE IF NOT EXISTS pool_stats (
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 `)
 
+// additive migrations for DBs created before these columns existed
+// (CREATE TABLE IF NOT EXISTS won't touch an existing table)
+for (const mig of [
+  // anchor-rooted price trust: min real (anchor/GT) depth along the propagation
+  // chain that produced this price — spoof-proof, unlike price_depth_usd
+  'ALTER TABLE tokens ADD COLUMN price_trust_usd REAL NOT NULL DEFAULT 0',
+  // 1 = claimed TVL is not backed by trusted pricing (see state.ts reprice)
+  'ALTER TABLE pool_state ADD COLUMN tvl_sus INTEGER NOT NULL DEFAULT 0',
+]) {
+  try {
+    db.exec(mig)
+  } catch {
+    /* column already exists */
+  }
+}
+
 // ---- kv ----
 const kvGetQ = db.prepare('SELECT v FROM kv WHERE k = ?')
 const kvSetQ = db.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')
@@ -123,11 +139,11 @@ export const upsertTokenMeta = (addr: string, symbol: string, decimals: number, 
   void insTokenQ.run(addr.toLowerCase(), symbol, decimals, metaOk ? 1 : 0)
 
 const priceQ = db.prepare(`
-  INSERT INTO tokens (address, price_usd, price_depth_usd, price_src, price_updated) VALUES (?, ?, ?, ?, ?)
+  INSERT INTO tokens (address, price_usd, price_depth_usd, price_trust_usd, price_src, price_updated) VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(address) DO UPDATE SET price_usd = excluded.price_usd, price_depth_usd = excluded.price_depth_usd,
-    price_src = excluded.price_src, price_updated = excluded.price_updated`)
-export const setTokenPrice = (addr: string, usd: number, depthUsd: number, src: string) =>
-  void priceQ.run(addr.toLowerCase(), usd, depthUsd, src, now())
+    price_trust_usd = excluded.price_trust_usd, price_src = excluded.price_src, price_updated = excluded.price_updated`)
+export const setTokenPrice = (addr: string, usd: number, depthUsd: number, trustUsd: number, src: string) =>
+  void priceQ.run(addr.toLowerCase(), usd, depthUsd, trustUsd, src, now())
 
 export type TokenRow = {
   address: string
@@ -136,6 +152,7 @@ export type TokenRow = {
   meta_ok: number
   price_usd: number | null
   price_depth_usd: number
+  price_trust_usd: number
   price_src: string | null
   price_updated: number | null
 }
@@ -172,9 +189,9 @@ export const upsertState = (
     now(),
   )
 
-const tvlQ = db.prepare('UPDATE pool_state SET tvl_usd = ?, tvl_approx = ? WHERE address = ?')
-export const setTvl = (addr: string, tvl: number | null, approx: boolean) =>
-  void tvlQ.run(tvl, approx ? 1 : 0, addr.toLowerCase())
+const tvlQ = db.prepare('UPDATE pool_state SET tvl_usd = ?, tvl_approx = ?, tvl_sus = ? WHERE address = ?')
+export const setTvl = (addr: string, tvl: number | null, approx: boolean, sus: boolean) =>
+  void tvlQ.run(tvl, approx ? 1 : 0, sus ? 1 : 0, addr.toLowerCase())
 
 // ---- pool_stats ----
 const upStatsQ = db.prepare(`

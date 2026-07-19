@@ -26,6 +26,7 @@ type ApiPool = {
   reserve1: string
   totalSupply: string | null
   tvlUsd: number | null
+  tvlSus?: boolean
   vol24hUsd: number | null
   txns24h: number | null
   gtLiqUsd: number | null
@@ -112,6 +113,7 @@ export async function fetchUniIndex(
       vol24hUsd: p.vol24hUsd,
       liqUsd: p.tvlUsd ?? p.gtLiqUsd, // chain-derived TVL first, GT reserve as backstop
       source: p.statsSource === 'geckoterminal' ? 'geckoterminal' : 'chain',
+      sus: p.tvlSus === true,
     }
   }
 

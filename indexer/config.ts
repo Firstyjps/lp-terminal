@@ -26,6 +26,7 @@ export const TUNE = {
   batchGapMs: 40, // pause between aggregates (gentle on the RPC)
   hotTvlUsd: 10_000, // pools at/above this TVL refresh every hotSweepMs
   minDepthUsd: 300, // min priced-side USD depth to propagate a price through a pool
+  susRatio: 20, // a pool side worth > susRatio × its token's price trust marks the pool sus
   gtFreshSecs: 1_800, // GT prices younger than this are never overwritten by propagation
 }
 

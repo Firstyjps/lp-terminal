@@ -93,6 +93,8 @@ export const zh: typeof en = {
     protoV2Tip: '仅 uniswap v2 池',
     hideDust: '隐藏 <$1K',
     hideDustTip: '隐藏 TVL 低于 $1k 的池 — uniswap 目录 95% 是 meme 灰尘池',
+    hideSus: '隐藏假池',
+    hideSusTip: '隐藏 TVL 缺乏可信定价支撑的池（骗子代币伪造上亿 TVL）',
     mine: '● 我的 ({{n}})',
     minTvlLbl: 'TVL≥$',
     minTvlTip: '隐藏 TVL 低于此值的池（留空 = 关闭）',

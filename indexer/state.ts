@@ -121,13 +121,33 @@ async function sweepSlice(addrs: string[]): Promise<number> {
   return rows.length
 }
 
-type PriceEntry = { usd: number; depth: number; src: string; updated: number }
+type PriceEntry = { usd: number; depth: number; trust: number; src: string; updated: number }
+
+// trust = min real depth along the propagation chain back to an anchor/GT seed
+// (bottleneck). depth alone is spoofable: a scam pool's "depth" is its balance
+// × an already-fake price, so chained pools can claim arbitrary depth — but
+// they can never raise the bottleneck above the real money at the chain's root.
+const ANCHOR_TRUST = 1e12
 
 const loadPrices = (): Map<string, PriceEntry> => {
   const m = new Map<string, PriceEntry>()
   for (const t of allTokens())
     if (t.price_usd != null && t.price_usd > 0)
-      m.set(t.address, { usd: t.price_usd, depth: t.price_depth_usd, src: t.price_src ?? '?', updated: t.price_updated ?? 0 })
+      m.set(t.address, {
+        usd: t.price_usd,
+        depth: t.price_depth_usd,
+        // pre-migration rows have trust 0 — GT seeds fall back to their depth
+        trust: t.price_trust_usd > 0 ? t.price_trust_usd : t.price_src === 'gt' ? t.price_depth_usd : 0,
+        src: t.price_src ?? '?',
+        updated: t.price_updated ?? 0,
+      })
+  // WETH + USDG are the chain's verified anchors — fully trusted regardless of
+  // the (often tiny) stored depth GT happened to sample their price from.
+  // Applied here so every consumer (reprice AND computeTvlFor) gets it.
+  for (const a of [ADDR.WETH, ADDR.USDG]) {
+    const e = m.get(a.toLowerCase())
+    if (e) e.trust = ANCHOR_TRUST
+  }
   return m
 }
 
@@ -157,7 +177,7 @@ export function reprice(): { priced: number; tvlPools: number } {
   const prices = loadPrices()
   // bootstrap anchor before the first GT cycle: USDG ≈ $1 (GT overwrites it)
   if (!prices.has(ADDR.USDG.toLowerCase()))
-    prices.set(ADDR.USDG.toLowerCase(), { usd: 1, depth: 1, src: 'anchor', updated: now() })
+    prices.set(ADDR.USDG.toLowerCase(), { usd: 1, depth: 1, trust: ANCHOR_TRUST, src: 'anchor', updated: now() })
 
   const states = statesQ()
   const human = (raw: string, addr: string) => Number(formatUnits(BigInt(raw), decs.get(addr) ?? 18))
@@ -177,9 +197,13 @@ export function reprice(): { priced: number; tvlPools: number } {
         if (!kp || ob <= 0) continue
         const depth = kb * kp.usd
         if (depth < TUNE.minDepthUsd) continue
+        const trust = Math.min(kp.trust, depth)
         const existing = prices.get(other)
-        if (existing && (gtFresh(existing) || existing.depth >= depth)) continue
-        const e: PriceEntry = { usd: depth / ob, depth, src: 'pool', updated: now() }
+        // trust-first replacement (depth breaks ties): depth-first would let a
+        // deep-but-fake pool hijack the price of a legitimately priced token
+        if (existing && (gtFresh(existing) || existing.trust > trust || (existing.trust === trust && existing.depth >= depth)))
+          continue
+        const e: PriceEntry = { usd: depth / ob, depth, trust, src: 'pool', updated: now() }
         prices.set(other, e)
         dirty.set(other, e)
         changed++
@@ -188,20 +212,46 @@ export function reprice(): { priced: number; tvlPools: number } {
     if (!changed) break
   }
 
+  const gtLiq = new Map(
+    (db.prepare('SELECT address, liq_usd FROM pool_stats WHERE liq_usd IS NOT NULL').all() as {
+      address: string
+      liq_usd: number
+    }[]).map((r) => [r.address, r.liq_usd]),
+  )
   let tvlPools = 0
   tx(() => {
-    for (const [addr, e] of dirty) setTokenPrice(addr, e.usd, e.depth, e.src)
+    for (const [addr, e] of dirty) setTokenPrice(addr, e.usd, e.depth, e.trust, e.src)
     for (const s of states) {
       const p0 = prices.get(s.token0)
       const p1 = prices.get(s.token1)
       const u0 = p0 ? human(s.reserve0, s.token0) * p0.usd : null
       const u1 = p1 ? human(s.reserve1, s.token1) * p1.usd : null
       const tvl = u0 != null && u1 != null ? u0 + u1 : u0 != null ? u0 * 2 : u1 != null ? u1 * 2 : null
-      setTvl(s.address, tvl, tvl != null && (u0 == null || u1 == null))
+      setTvl(s.address, tvl, tvl != null && (u0 == null || u1 == null), tvlSus(tvl, u0, p0, u1, p1, gtLiq.get(s.address)))
       if (tvl != null) tvlPools++
     }
   })
   return { priced: prices.size, tvlPools }
+}
+
+/**
+ * sus = the claimed TVL is mostly backed by a token whose price trust can't
+ * plausibly support it (side value > susRatio × the token's trust bottleneck).
+ * GT's own reserve figure rescues pools GT actively tracks: if GT sees real
+ * liquidity in the same order of magnitude, the TVL stands.
+ */
+function tvlSus(
+  tvl: number | null,
+  u0: number | null,
+  p0: PriceEntry | undefined,
+  u1: number | null,
+  p1: PriceEntry | undefined,
+  gtLiqUsd: number | undefined,
+): boolean {
+  if (tvl == null) return false
+  if (gtLiqUsd != null && gtLiqUsd * TUNE.susRatio >= tvl) return false
+  const over = (u: number | null, p: PriceEntry | undefined) => u != null && p != null && u > TUNE.susRatio * p.trust
+  return over(u0, p0) || over(u1, p1)
 }
 
 /** cheap TVL refresh for a few pools using already-stored prices (no propagation) */
@@ -213,6 +263,7 @@ export function computeTvlFor(addrs: string[]): void {
     `SELECT p.address, p.proto, p.token0, p.token1, s.reserve0, s.reserve1
      FROM pools p JOIN pool_state s ON s.address = p.address WHERE p.address = ?`,
   )
+  const liqQ = db.prepare('SELECT liq_usd FROM pool_stats WHERE address = ?')
   tx(() => {
     for (const a of addrs) {
       const s = q.get(a.toLowerCase()) as StateRow | undefined
@@ -223,7 +274,8 @@ export function computeTvlFor(addrs: string[]): void {
       const u0 = p0 ? human(s.reserve0, s.token0) * p0.usd : null
       const u1 = p1 ? human(s.reserve1, s.token1) * p1.usd : null
       const tvl = u0 != null && u1 != null ? u0 + u1 : u0 != null ? u0 * 2 : u1 != null ? u1 * 2 : null
-      setTvl(s.address, tvl, tvl != null && (u0 == null || u1 == null))
+      const gtLiq = (liqQ.get(s.address) as { liq_usd: number | null } | undefined)?.liq_usd ?? undefined
+      setTvl(s.address, tvl, tvl != null && (u0 == null || u1 == null), tvlSus(tvl, u0, p0, u1, p1, gtLiq))
     }
   })
 }

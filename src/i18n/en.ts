@@ -92,6 +92,8 @@ export const en = {
     protoV2Tip: 'uniswap v2 pairs only',
     hideDust: 'HIDE <$1K',
     hideDustTip: 'hide pools under $1k TVL — 95% of the uniswap catalog is dust meme pools',
+    hideSus: 'HIDE FAKE',
+    hideSusTip: 'hide pools whose TVL is not backed by trusted pricing (scam tokens faking $100M+ TVL)',
     mine: '● MINE ({{n}})',
     minTvlLbl: 'TVL≥$',
     minTvlTip: 'hide pools below this TVL (blank = off)',

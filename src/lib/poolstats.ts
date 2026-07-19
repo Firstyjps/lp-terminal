@@ -11,6 +11,8 @@ export type PoolStat = {
   vol24hUsd: number | null
   liqUsd: number | null
   source: 'dexscreener' | 'subgraph' | 'geckoterminal' | 'chain'
+  // indexer-flagged: claimed TVL not backed by trusted pricing (scam/noise pool)
+  sus?: boolean
 }
 
 // in same-origin proxy mode (server deploys) these route through nginx so

@@ -74,7 +74,7 @@ function getPools(params: Params) {
     .prepare(
       `SELECT p.address, p.proto, p.token0, p.token1, p.fee_ppm, p.tick_spacing, p.created_block,
               s.sqrt_price, s.tick, s.liquidity, s.reserve0, s.reserve1, s.total_supply,
-              s.tvl_usd, s.tvl_approx, s.updated AS state_updated,
+              s.tvl_usd, s.tvl_approx, s.tvl_sus, s.updated AS state_updated,
               st.vol24h_usd, st.txns24h, st.liq_usd, st.source AS stats_source
        ${base} ${order} LIMIT ? OFFSET ?`,
     )
@@ -100,6 +100,7 @@ function getPools(params: Params) {
       totalSupply: r.total_supply,
       tvlUsd: r.tvl_usd,
       tvlApprox: r.tvl_approx === 1,
+      tvlSus: r.tvl_sus === 1,
       vol24hUsd: r.vol24h_usd,
       txns24h: r.txns24h,
       gtLiqUsd: r.liq_usd,

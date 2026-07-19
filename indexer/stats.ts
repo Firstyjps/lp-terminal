@@ -67,8 +67,8 @@ function ingest(p: GtPool): boolean {
     const quote = tokenOfId(p.relationships?.quote_token?.data?.id)
     const bp = num(a.base_token_price_usd)
     const qp = num(a.quote_token_price_usd)
-    if (base && bp && bp > 0) setTokenPrice(base, bp, depth, 'gt')
-    if (quote && qp && qp > 0) setTokenPrice(quote, qp, depth, 'gt')
+    if (base && bp && bp > 0) setTokenPrice(base, bp, depth, depth, 'gt')
+    if (quote && qp && qp > 0) setTokenPrice(quote, qp, depth, depth, 'gt')
   }
   return true
 }
