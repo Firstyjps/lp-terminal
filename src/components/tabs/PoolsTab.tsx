@@ -47,8 +47,25 @@ import { AmountRow, Btn, NumInput } from '../ui'
 
 const SLIP_BPS = 100
 
-type SortKey = 'vol' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
+type SortKey = 'vol' | 'eff' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
 type ProtoFilter = 'all' | 'up33' | 'univ3' | 'univ2'
+
+// ---- watchlist (starred pools, persisted like the lang/theme prefs) ----
+const WATCH_KEY = 'lp.watch.v1'
+function loadWatch(): Set<string> {
+  try {
+    return new Set((JSON.parse(localStorage.getItem(WATCH_KEY) ?? '[]') as string[]).map((a) => a.toLowerCase()))
+  } catch {
+    return new Set()
+  }
+}
+function saveWatch(s: Set<string>) {
+  try {
+    localStorage.setItem(WATCH_KEY, JSON.stringify([...s]))
+  } catch {
+    /* storage full/blocked — watchlist just won't persist */
+  }
+}
 
 export function PoolsTab() {
   const { t } = useTranslation()
@@ -64,6 +81,20 @@ export function PoolsTab() {
   const [proto, setProto] = useState<ProtoFilter>('all')
   const [uniQuery, setUniQuery] = useState('') // '' = whole catalog by TVL (index) / WETH pools (fallback)
   const [hideDust, setHideDust] = useState(true) // 95% of the uniswap catalog is <$1k meme dust
+  const [minTvlStr, setMinTvlStr] = useState('')
+  const [minVolStr, setMinVolStr] = useState('')
+  const [statsOnly, setStatsOnly] = useState(false)
+  const [watch, setWatch] = useState<Set<string>>(loadWatch)
+  const [watchOnly, setWatchOnly] = useState(false)
+  const toggleWatch = (addr: string) => {
+    const s = new Set(watch)
+    const k = addr.toLowerCase()
+    if (s.has(k)) s.delete(k)
+    else s.add(k)
+    setWatch(s)
+    saveWatch(s)
+    if (s.size === 0) setWatchOnly(false)
+  }
   const uni = useUniPools(uniQuery, hideDust ? 1_000 : 0, proto === 'univ2' || proto === 'univ3' ? proto : undefined)
   const filterRef = useRef<HTMLInputElement>(null)
 
@@ -111,9 +142,21 @@ export function PoolsTab() {
   const byPool = stats.data?.byPool
   const uniStats = uni.data?.stats
   const statOf = (p: Pool) => byPool?.[p.address.toLowerCase()] ?? uniStats?.[p.address.toLowerCase()]
+  // capital efficiency: 24h volume per $ of TVL (null when either side is missing)
+  const effOf = (p: Pool) => {
+    const s = statOf(p)
+    return s?.vol24hUsd != null && s.liqUsd != null && s.liqUsd > 0 ? s.vol24hUsd / s.liqUsd : null
+  }
+  const minTvl = Number(minTvlStr) || 0
+  const minVol = Number(minVolStr) || 0
   let list = [...pools.data.pools, ...(uni.data?.pools ?? [])].filter((p) => {
     if (onlyMine && !mySet.has(p.address.toLowerCase())) return false
+    if (watchOnly && !watch.has(p.address.toLowerCase())) return false
     if (proto !== 'all' && p.protocol !== proto) return false
+    const s = statOf(p)
+    if (minTvl > 0 && !((s?.liqUsd ?? 0) >= minTvl)) return false
+    if (minVol > 0 && !((s?.vol24hUsd ?? 0) >= minVol)) return false
+    if (statsOnly && s?.vol24hUsd == null) return false
     if (!q) return true
     // uniswap rows arrive already query-matched by the API (which also handles
     // reversed pairs and raw addresses) — only up33 rows filter locally
@@ -124,6 +167,7 @@ export function PoolsTab() {
   if (sort) {
     list = [...list].sort((a, b) => {
       if (sort === 'vol') return (statOf(b)?.vol24hUsd ?? -1) - (statOf(a)?.vol24hUsd ?? -1)
+      if (sort === 'eff') return (effOf(b) ?? -1) - (effOf(a) ?? -1)
       if (sort === 'fees24') return (fees24Of(b, statOf(b)) ?? -1) - (fees24Of(a, statOf(a)) ?? -1)
       if (sort === 'tvl') return (statOf(b)?.liqUsd ?? -1) - (statOf(a)?.liqUsd ?? -1)
       if (sort === 'feeApr') return (feeAprOf(b, statOf(b)) ?? -1) - (feeAprOf(a, statOf(a)) ?? -1)
@@ -178,6 +222,32 @@ export function PoolsTab() {
         )}
       </div>
       <div className="form-row">
+        <span className="dim mono-sm" title={t('pools.minTvlTip')}>
+          {t('pools.minTvlLbl')}
+        </span>
+        <NumInput value={minTvlStr} onChange={setMinTvlStr} width={90} placeholder="—" />
+        <span className="dim mono-sm" title={t('pools.minVolTip')}>
+          {t('pools.minVolLbl')}
+        </span>
+        <NumInput value={minVolStr} onChange={setMinVolStr} width={90} placeholder="—" />
+        <button
+          className={`chip ${statsOnly ? 'on' : ''}`}
+          onClick={() => setStatsOnly(!statsOnly)}
+          title={t('pools.statsOnlyTip')}
+        >
+          {t('pools.statsOnly')}
+        </button>
+        {watch.size > 0 && (
+          <button
+            className={`chip ${watchOnly ? 'on' : ''}`}
+            onClick={() => setWatchOnly(!watchOnly)}
+            title={t('pools.watchTip')}
+          >
+            {t('pools.watch', { n: watch.size })}
+          </button>
+        )}
+      </div>
+      <div className="form-row">
         <span className="dim mono-sm">
           {t('pools.statShown', { n: list.length })} · {t('pools.statUp33', { n: pools.data.pools.length })} ·{' '}
           {t('pools.statUniswap')}{' '}
@@ -221,6 +291,7 @@ export function PoolsTab() {
               <th>{t('pools.thPrice')}</th>
               {th('tvl', t('pools.thTvl'))}
               {th('vol', t('pools.thVol'))}
+              {th('eff', t('pools.thEff'))}
               {th('fees24', t('pools.thFees'))}
               {th('feeApr', t('pools.thFeeApr'))}
               {th('rewards', t('pools.thRewards'))}
@@ -238,6 +309,8 @@ export function PoolsTab() {
                 wethUsd={stats.data?.wethUsd}
                 totalWeight={totalWeight}
                 mine={mySet.has(p.address.toLowerCase())}
+                watched={watch.has(p.address.toLowerCase())}
+                onWatch={() => toggleWatch(p.address)}
                 open={open === p.address}
                 onToggle={() => setOpen(open === p.address ? null : p.address)}
                 rewardsSub={proto === 'up33'}
@@ -261,6 +334,8 @@ function PoolRow(props: {
   wethUsd?: number | null
   totalWeight: bigint
   mine: boolean
+  watched: boolean
+  onWatch: () => void
   open: boolean
   onToggle: () => void
   /** UP33 filter view: show the emissions detail sub-line (wide column) */
@@ -284,6 +359,14 @@ function PoolRow(props: {
       <tr className="rowhover">
         <td>
           <div>
+            <span
+              className={props.watched ? 'amber' : 'dim'}
+              style={{ cursor: 'pointer', marginRight: 4 }}
+              title={props.watched ? t('pools.watchRemoveTip') : t('pools.watchAddTip')}
+              onClick={props.onWatch}
+            >
+              {props.watched ? '★' : '☆'}
+            </span>
             {props.mine && (
               <span className="mydot" title={t('pools.mineDotTip')}>
                 ●
@@ -345,6 +428,13 @@ function PoolRow(props: {
         <td className="num">
           {stat?.vol24hUsd != null ? fmtUsd(stat.vol24hUsd) : <span className="dim">—</span>}
         </td>
+        <td className="num" title={t('pools.effTip')}>
+          {stat?.vol24hUsd != null && stat.liqUsd != null && stat.liqUsd > 0 ? (
+            <>{(stat.vol24hUsd / stat.liqUsd).toFixed(stat.vol24hUsd / stat.liqUsd >= 10 ? 1 : 2)}×</>
+          ) : (
+            <span className="dim">—</span>
+          )}
+        </td>
         <td className="num">
           {fees24 != null ? <span className="amber">{fmtUsd(fees24)}</span> : <span className="dim">—</span>}
         </td>
@@ -378,7 +468,7 @@ function PoolRow(props: {
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={8}>
+          <td colSpan={9}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (
