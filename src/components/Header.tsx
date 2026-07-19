@@ -20,7 +20,7 @@ export function Header(props: { tab: TabId; onTab: (t: TabId) => void }) {
   return (
     <div className="hdr">
       <span className="brand">
-        LP<span className="cursor">▮</span>TERMINAL
+        ALPHAST<span className="cursor">▮</span>
       </span>
       <div className="tabs">
         {TABS.map((tb) => (

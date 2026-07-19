@@ -28,7 +28,7 @@ export const zh: typeof en = {
   app: {
     wrongNetwork: '!! 网络错误 — 本终端只在 Robinhood Chain (4663) 上写入',
     switch: '切换',
-    tagline: 'LP TERMINAL v0.2 · 精确授权 · 链上实时读取',
+    tagline: 'ALPHAST v0.2 · 精确授权 · 链上实时读取',
     keys: '快捷键: [1] 池子 [2] 仓位 [3] 兑换 [4] 限价',
     blockscout: 'blockscout↗',
     reloaded: '已刷新 — 此标签页打开期间部署了新版本',

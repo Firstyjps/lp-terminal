@@ -21,7 +21,7 @@ const transport = userRpc
       : http(PUBLIC_RPC, { batch: true })
 
 export const wagmiConfig = getDefaultConfig({
-  appName: 'UP33 Terminal',
+  appName: 'Alphast',
   projectId: ENV.wcProjectId,
   chains: [robinhood],
   transports: { [robinhood.id]: transport },

@@ -27,7 +27,7 @@ export const en = {
   app: {
     wrongNetwork: '!! WRONG NETWORK — this terminal only writes on Robinhood Chain (4663)',
     switch: 'SWITCH',
-    tagline: 'LP TERMINAL v0.2 · exact approvals · live on-chain reads',
+    tagline: 'ALPHAST v0.2 · exact approvals · live on-chain reads',
     keys: 'keys: [1] pools [2] positions [3] swap [4] limit',
     blockscout: 'blockscout↗',
     reloaded: 'reloaded — a new build was deployed while this tab was open',

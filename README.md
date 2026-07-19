@@ -1,4 +1,4 @@
-# LP TERMINAL
+# ALPHAST
 
 Terminal-style frontend for LPs on Robinhood Chain (chainId 4663): UP33
 (ve(3,3) DEX) plus the official **Uniswap v2 + v3** deployments. POSITIONS shows
