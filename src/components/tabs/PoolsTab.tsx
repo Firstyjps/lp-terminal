@@ -29,7 +29,7 @@ import {
   stakedShareOf,
   type AddSim,
 } from '../../lib/apr'
-import { fmtAmount, fmtCompactAmount, fmtNum, fmtUsd, nowSec } from '../../lib/format'
+import { fmtAmount, fmtCompactAmount, fmtDur, fmtNum, fmtUsd, nowSec } from '../../lib/format'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, step } from '../../lib/tx'
 import { useBalances } from '../../hooks/useBalances'
 import { usePositions } from '../../hooks/usePositions'
@@ -47,8 +47,12 @@ import { AmountRow, Btn, NumInput } from '../ui'
 
 const SLIP_BPS = 100
 
-type SortKey = 'vol' | 'eff' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
+type SortKey = 'vol' | 'eff' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | 'age' | null
 type ProtoFilter = 'all' | 'up33' | 'univ3' | 'univ2'
+
+// Robinhood Chain averages ~0.1s/block (~10 blocks/s) — used to turn a pool's
+// creation-block delta into a human age for the AGE column / NEW sort.
+const SECS_PER_BLOCK = 0.1
 
 // ---- watchlist (starred pools, persisted like the lang/theme prefs) ----
 const WATCH_KEY = 'lp.watch.v1'
@@ -96,7 +100,14 @@ export function PoolsTab() {
     saveWatch(s)
     if (s.size === 0) setWatchOnly(false)
   }
-  const uni = useUniPools(uniQuery, hideDust ? 1_000 : 0, proto === 'univ2' || proto === 'univ3' ? proto : undefined)
+  // sorting by AGE pulls the newest across the whole catalog, not just the
+  // newest among the top-TVL page the server would otherwise return
+  const uni = useUniPools(
+    uniQuery,
+    hideDust ? 1_000 : 0,
+    proto === 'univ2' || proto === 'univ3' ? proto : undefined,
+    sort === 'age' ? 'created' : 'tvl',
+  )
   const filterRef = useRef<HTMLInputElement>(null)
 
   // typing filters the local list instantly; the catalog query follows 350ms behind
@@ -148,6 +159,14 @@ export function PoolsTab() {
     const s = statOf(p)
     return s?.vol24hUsd != null && s.liqUsd != null && s.liqUsd > 0 ? s.vol24hUsd / s.liqUsd : null
   }
+  // pool age in seconds, derived from its creation block vs the chain head
+  const head = pools.data.protocol.blockNumber
+  const ageOf = (p: Pool) => {
+    const cb = statOf(p)?.createdBlock
+    if (cb == null || head == null) return null
+    const delta = Number(head) - cb
+    return delta >= 0 ? delta * SECS_PER_BLOCK : null
+  }
   const minTvl = Number(minTvlStr) || 0
   const minVol = Number(minVolStr) || 0
   let list = [...pools.data.pools, ...(uni.data?.pools ?? [])].filter((p) => {
@@ -172,6 +191,12 @@ export function PoolsTab() {
       if (sort === 'eff') return (effOf(b) ?? -1) - (effOf(a) ?? -1)
       if (sort === 'fees24') return (fees24Of(b, statOf(b)) ?? -1) - (fees24Of(a, statOf(a)) ?? -1)
       if (sort === 'tvl') return (statOf(b)?.liqUsd ?? -1) - (statOf(a)?.liqUsd ?? -1)
+      if (sort === 'age') {
+        // youngest first; pools without a known creation block sort last
+        const ca = statOf(a)?.createdBlock ?? -1
+        const cb = statOf(b)?.createdBlock ?? -1
+        return cb - ca
+      }
       if (sort === 'feeApr') return (feeAprOf(b, statOf(b)) ?? -1) - (feeAprOf(a, statOf(a)) ?? -1)
       return (
         (emitAprOf(b, statOf(b), upPrice.data) ?? -1) - (emitAprOf(a, statOf(a), upPrice.data) ?? -1)
@@ -300,6 +325,7 @@ export function PoolsTab() {
               {th('fees24', t('pools.thFees'))}
               {th('feeApr', t('pools.thFeeApr'))}
               {th('rewards', t('pools.thRewards'))}
+              {th('age', t('pools.thAge'))}
               <th></th>
             </tr>
           </thead>
@@ -315,6 +341,7 @@ export function PoolsTab() {
                 totalWeight={totalWeight}
                 mine={mySet.has(p.address.toLowerCase())}
                 watched={watch.has(p.address.toLowerCase())}
+                ageSecs={ageOf(p)}
                 onWatch={() => toggleWatch(p.address)}
                 open={open === p.address}
                 onToggle={() => setOpen(open === p.address ? null : p.address)}
@@ -340,6 +367,8 @@ function PoolRow(props: {
   totalWeight: bigint
   mine: boolean
   watched: boolean
+  /** pool age in seconds (null = unknown creation block, e.g. up33 registry) */
+  ageSecs: number | null
   onWatch: () => void
   open: boolean
   onToggle: () => void
@@ -462,6 +491,13 @@ function PoolRow(props: {
             <span className="dim">—</span>
           )}
         </td>
+        <td className="num mono-sm" title={t('pools.ageTip')}>
+          {props.ageSecs != null ? (
+            <span className={props.ageSecs < 3600 ? 'green' : 'dim'}>{fmtDur(props.ageSecs)}</span>
+          ) : (
+            <span className="dim">—</span>
+          )}
+        </td>
         <td className="num">
           <Btn tone="ghost" onClick={props.onToggle}>
             {props.open ? t('common.close') : t('pools.addLp')}
@@ -473,7 +509,7 @@ function PoolRow(props: {
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={9}>
+          <td colSpan={10}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (

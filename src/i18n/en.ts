@@ -126,6 +126,8 @@ export const en = {
     thFees: 'FEES 24H',
     thFeeApr: 'FEE APR',
     thRewards: 'REWARDS',
+    thAge: 'AGE',
+    ageTip: 'time since the pool was created on-chain — sort to surface the newest pools first (green = under 1h old)',
     sortTip: 'click to sort',
     mineDotTip: 'you have a position here',
     gauge: 'gauge',

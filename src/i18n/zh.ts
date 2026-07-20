@@ -127,6 +127,8 @@ export const zh: typeof en = {
     thFees: '24H 费',
     thFeeApr: '费率 APR',
     thRewards: '排放奖励',
+    thAge: '存续',
+    ageTip: '池子链上创建至今的时间 — 排序可将最新的池子置顶（绿色 = 不足 1 小时）',
     sortTip: '点击排序',
     mineDotTip: '你在此池有仓位',
     gauge: 'gauge',

@@ -13,6 +13,8 @@ export type PoolStat = {
   source: 'dexscreener' | 'subgraph' | 'geckoterminal' | 'chain'
   // indexer-flagged: claimed TVL not backed by trusted pricing (scam/noise pool)
   sus?: boolean
+  // factory-event block the pool was created at (indexer only; used for AGE / NEW sort)
+  createdBlock?: number | null
 }
 
 // in same-origin proxy mode (server deploys) these route through nginx so

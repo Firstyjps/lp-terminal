@@ -23,14 +23,19 @@ export type UniPoolsData = {
  * or warming up it falls back to client-side dexscreener discovery with
  * on-chain factory.getPool verification (v3 only, top 30).
  */
-export function useUniPools(query: string, minTvl: number, proto?: 'univ2' | 'univ3') {
+export function useUniPools(
+  query: string,
+  minTvl: number,
+  proto?: 'univ2' | 'univ3',
+  sort: 'tvl' | 'created' = 'tvl',
+) {
   const pc = usePublicClient()
   return useQuery<UniPoolsData>({
-    queryKey: ['uniPools', query.trim().toLowerCase(), minTvl, proto ?? 'all'],
+    queryKey: ['uniPools', query.trim().toLowerCase(), minTvl, proto ?? 'all', sort],
     enabled: !!pc,
     refetchInterval: 30_000,
     queryFn: async () => {
-      const idx = await fetchUniIndex(query, minTvl, proto)
+      const idx = await fetchUniIndex(query, minTvl, proto, sort)
       if (idx) return { ...idx, dropped: 0, source: 'index' }
       const legacy = await fetchUniBrowse(pc as PublicClient, query)
       return {
