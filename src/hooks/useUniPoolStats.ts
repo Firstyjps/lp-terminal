@@ -20,7 +20,7 @@ export function useUniPoolStats(addrs: Address[]) {
       const out: Record<string, PoolStat> = {}
       await Promise.all(
         addrs.map(async (a) => {
-          const r = await fetchUniIndex(a, 0, undefined, 'tvl', 4).catch(() => null)
+          const r = await fetchUniIndex(a, 0, undefined, 4).catch(() => null)
           if (r) Object.assign(out, r.stats)
         }),
       )

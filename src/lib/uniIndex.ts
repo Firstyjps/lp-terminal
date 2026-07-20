@@ -31,7 +31,6 @@ type ApiPool = {
   txns24h: number | null
   gtLiqUsd: number | null
   statsSource: string | null
-  createdBlock: number | null
 }
 
 type ApiResponse = {
@@ -56,7 +55,6 @@ export async function fetchUniIndex(
   query: string,
   minTvl: number,
   proto?: 'univ2' | 'univ3',
-  sort: 'tvl' | 'created' = 'tvl',
   limit = 120,
 ): Promise<UniIndexData | null> {
   let j: ApiResponse
@@ -66,7 +64,6 @@ export async function fetchUniIndex(
     if (q) u.searchParams.set('q', q)
     if (minTvl > 0) u.searchParams.set('min_tvl', String(minTvl))
     if (proto) u.searchParams.set('proto', proto)
-    if (sort !== 'tvl') u.searchParams.set('sort', sort)
     u.searchParams.set('limit', String(limit))
     const r = await fetch(u)
     if (!r.ok) return null
@@ -117,7 +114,6 @@ export async function fetchUniIndex(
       liqUsd: p.tvlUsd ?? p.gtLiqUsd, // chain-derived TVL first, GT reserve as backstop
       source: p.statsSource === 'geckoterminal' ? 'geckoterminal' : 'chain',
       sus: p.tvlSus === true,
-      createdBlock: p.createdBlock,
     }
   }
 
