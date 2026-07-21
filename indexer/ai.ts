@@ -38,8 +38,33 @@ async function getJson(url: string): Promise<any> {
 type Series = [number, number][]
 const sum = (s: Series, from: number, to?: number) => s.slice(from, to).reduce((a, p) => a + p[1], 0)
 
+/** one DeepSeek chat completion; returns the assistant text (throws on error) */
+export async function deepseekChat(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  opts?: { maxTokens?: number; temperature?: number; json?: boolean },
+): Promise<string> {
+  const key = deepseekKey()
+  if (!key) throw new Error('no DEEPSEEK_API_KEY')
+  const r = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages,
+      ...(opts?.json ? { response_format: { type: 'json_object' } } : {}),
+      temperature: opts?.temperature ?? 0.4,
+      max_tokens: opts?.maxTokens ?? 900,
+    }),
+  })
+  if (!r.ok) throw new Error(`deepseek ${r.status}: ${(await r.text()).slice(0, 120)}`)
+  const j = await r.json()
+  const out = j.choices?.[0]?.message?.content
+  if (typeof out !== 'string') throw new Error('deepseek: bad shape')
+  return out
+}
+
 /** compact numeric picture of the chain for the prompt — no free text inside */
-async function metrics(): Promise<Record<string, unknown>> {
+export async function metrics(): Promise<Record<string, unknown>> {
   const [tvl, dex, fees, stables] = await Promise.all([
     getJson(`https://api.llama.fi/v2/historicalChainTvl/${CHAIN}`),
     getJson(`https://api.llama.fi/overview/dexs/${CHAIN}?excludeTotalDataChart=false&excludeTotalDataChartBreakdown=false`),

@@ -13,6 +13,7 @@ import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
 import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
 import { startApi } from './api'
+import { startTgBot } from './tgbot'
 import { tgEnabled, watchAddrs, watchCycle, watchEnabled } from './watch'
 
 /** setTimeout-chained loop — never overlaps itself, logs failures and keeps going */
@@ -98,6 +99,7 @@ async function boot(): Promise<void> {
   } else {
     log('[watch] disabled — set WATCH_ADDRESSES in .env to track positions')
   }
+  startTgBot()
 }
 
 process.on('SIGINT', () => {
