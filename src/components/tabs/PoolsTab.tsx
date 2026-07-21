@@ -5,6 +5,7 @@ import { readContract, writeContract } from 'wagmi/actions'
 import { formatUnits, parseUnits } from 'viem'
 import { clPmAbi, uniV2RouterAbi, uniV3PmAbi, v2RouterAbi } from '../../abi'
 import { ADDR, CHAIN_ID, EXPLORER, UNI, WEEK } from '../../config/addresses'
+import { VolPanel } from '../VolPanel'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   alignTick,
@@ -76,6 +77,7 @@ export function PoolsTab() {
   const positions = usePositions(user)
   const [q, setQ] = useState('') // one input: filters up33 locally + queries the indexer
   const [open, setOpen] = useState<string | null>(null)
+  const [openVol, setOpenVol] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>('tvl') // browse default: biggest pools first
   const [onlyMine, setOnlyMine] = useState(false)
   const [proto, setProto] = useState<ProtoFilter>('all')
@@ -314,6 +316,8 @@ export function PoolsTab() {
                 onWatch={() => toggleWatch(p.address)}
                 open={open === p.address}
                 onToggle={() => setOpen(open === p.address ? null : p.address)}
+                openVol={openVol === p.address}
+                onToggleVol={() => setOpenVol(openVol === p.address ? null : p.address)}
                 rewardsSub={proto === 'up33'}
               />
             ))}
@@ -339,6 +343,8 @@ function PoolRow(props: {
   onWatch: () => void
   open: boolean
   onToggle: () => void
+  openVol: boolean
+  onToggleVol: () => void
   /** UP33 filter view: show the emissions detail sub-line (wide column) */
   rewardsSub: boolean
 }) {
@@ -459,6 +465,9 @@ function PoolRow(props: {
           )}
         </td>
         <td className="num">
+          <Btn tone="ghost" onClick={props.onToggleVol}>
+            {props.openVol ? t('common.close') : t('pools.volBtn')}
+          </Btn>{' '}
           <Btn tone="ghost" onClick={props.onToggle}>
             {props.open ? t('common.close') : t('pools.addLp')}
           </Btn>{' '}
@@ -467,6 +476,16 @@ function PoolRow(props: {
           </a>
         </td>
       </tr>
+      {props.openVol && (
+        <tr>
+          <td colSpan={9}>
+            <VolPanel
+              pool={p.address}
+              kind={p.kind === 'v2' ? (p.protocol === 'up33' ? 'v2s' : 'v2') : 'cl'}
+            />
+          </td>
+        </tr>
+      )}
       {props.open && (
         <tr>
           <td colSpan={9}>

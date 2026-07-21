@@ -6,6 +6,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { aiEnabled, aiInsight } from './ai'
 import { PORT, log, now } from './config'
 import { db, kvGet, poolCounts, snapsFor, watchPosByOwner } from './store'
+import { VOL_HOURS, ensureVol, readVol } from './vol'
 import { tgEnabled, watchAddrs, watchEnabled } from './watch'
 
 const JSONH = { 'content-type': 'application/json; charset=utf-8' }
@@ -173,6 +174,18 @@ function getWatch(params: Params) {
   }
 }
 
+/** on-demand volume analysis — first call enqueues indexing, then serves
+ *  partial data with progress until the requested range is fully covered */
+function getVol(params: Params) {
+  const pool = (params.get('pool') ?? '').trim().toLowerCase()
+  if (!HEX40.test(pool)) return { error: 'bad pool' }
+  const hours = Number(params.get('hours')) || 24
+  if (!(VOL_HOURS as readonly number[]).includes(hours)) return { error: 'bad hours' }
+  const kind = params.get('kind') ?? undefined // 'cl' | 'v2' | 'v2s' hint for non-catalog (UP33) pools
+  ensureVol(pool, hours, kind)
+  return readVol(pool, hours)
+}
+
 function getPosHistory(params: Params) {
   const owner = (params.get('owner') ?? '').trim().toLowerCase()
   const npm = (params.get('npm') ?? '').trim()
@@ -203,6 +216,9 @@ export function startApi(): void {
         cache = 'no-store'
       } else if (url.pathname === '/api/pos-history') {
         body = getPosHistory(url.searchParams)
+        cache = 'no-store'
+      } else if (url.pathname === '/api/vol') {
+        body = getVol(url.searchParams)
         cache = 'no-store'
       }
       else if (url.pathname === '/api/health') {

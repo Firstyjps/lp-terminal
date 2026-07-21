@@ -851,3 +851,29 @@ th.sortable.on { color: var(--acc); }
 }
 .an-ai .txt { white-space: pre-line; line-height: 1.5; }
 .an-ai .meta { margin-top: 6px; }
+
+/* pools: per-pool volume analysis panel (VolPanel).
+   Lives inside a colSpan <td>: width MUST be viewport-capped and every grid
+   track minmax(0,…), or the measured-svg feedback loop inflates the table
+   (observed 3391px td at a 1500px viewport). */
+.vol-panel { padding: 8px 2px 6px; max-width: calc(100vw - 76px); }
+.vol-tiles { margin-bottom: 8px; }
+.vol-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+@media (max-width: 900px) { .vol-charts { grid-template-columns: minmax(0, 1fr); } }
+.vol-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 16px;
+  align-items: start;
+}
+@media (max-width: 900px) { .vol-tables { grid-template-columns: minmax(0, 1fr); } }
+.vol-buy { fill: var(--green-dim); }
+.vol-buy.hi { fill: var(--green); }
+.vol-sell { fill: var(--red); opacity: 0.55; }
+.vol-sell.hi { opacity: 1; }
+.vol-cvd { fill: none; stroke: var(--amber); stroke-width: 1.5; }

@@ -64,6 +64,24 @@ CREATE TABLE IF NOT EXISTS pool_stats (
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
+-- on-demand per-pool swap history (vol.ts) — only pools someone actually
+-- inspects get rows here, pruned past VOL_KEEP. Amounts are REAL: analytics
+-- and display only, never transaction inputs.
+CREATE TABLE IF NOT EXISTS swaps (
+  pool      TEXT NOT NULL,
+  block     INTEGER NOT NULL,
+  log_index INTEGER NOT NULL,
+  tx        TEXT NOT NULL,
+  ts        INTEGER NOT NULL,
+  trader    TEXT,                     -- tx.from, resolved in a second pass
+  side      TEXT NOT NULL,            -- 'buy' | 'sell' of the base token
+  base_amt  REAL NOT NULL,            -- token units
+  quote_amt REAL NOT NULL,
+  price     REAL,                     -- quote per base after the swap
+  PRIMARY KEY (pool, block, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_swaps_pool_ts ON swaps(pool, ts);
+
 -- position watcher (WATCH_ADDRESSES): last-known CL position state per NFT
 CREATE TABLE IF NOT EXISTS watch_positions (
   owner          TEXT NOT NULL,             -- lowercase wallet
@@ -351,6 +369,44 @@ export const tokenRows = (addrs: string[]): TokenRow[] =>
         .prepare(`SELECT * FROM tokens WHERE address IN (${addrs.map(() => '?').join(',')})`)
         .all(...addrs.map((a) => a.toLowerCase())) as TokenRow[])
     : []
+
+// ---- swaps (on-demand volume analysis) ----
+export type SwapRow = {
+  pool: string
+  block: number
+  log_index: number
+  tx: string
+  ts: number
+  trader: string | null
+  side: 'buy' | 'sell'
+  base_amt: number
+  quote_amt: number
+  price: number | null
+}
+
+const insSwapQ = db.prepare(`
+  INSERT OR IGNORE INTO swaps (pool, block, log_index, tx, ts, trader, side, base_amt, quote_amt, price)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+export const insertSwap = (s: SwapRow) =>
+  void insSwapQ.run(s.pool, s.block, s.log_index, s.tx, s.ts, s.trader, s.side, s.base_amt, s.quote_amt, s.price)
+
+const swapsForQ = db.prepare('SELECT * FROM swaps WHERE pool = ? AND ts >= ? ORDER BY block, log_index')
+export const swapsFor = (pool: string, sinceTs: number) => swapsForQ.all(pool.toLowerCase(), sinceTs) as SwapRow[]
+
+/** distinct tx hashes still missing a trader (tx.from) for this pool */
+export const swapTxsMissingTrader = (pool: string, limit: number): string[] =>
+  (
+    db
+      .prepare('SELECT DISTINCT tx FROM swaps WHERE pool = ? AND trader IS NULL LIMIT ?')
+      .all(pool.toLowerCase(), limit) as { tx: string }[]
+  ).map((r) => r.tx)
+
+const setTraderQ = db.prepare('UPDATE swaps SET trader = ? WHERE pool = ? AND tx = ?')
+export const setSwapTrader = (pool: string, txHash: string, trader: string) =>
+  void setTraderQ.run(trader, pool.toLowerCase(), txHash)
+
+export const pruneSwaps = (beforeTs: number): number =>
+  Number(db.prepare('DELETE FROM swaps WHERE ts < ?').run(beforeTs).changes)
 
 export const tx = (fn: () => void) => {
   db.exec('BEGIN')
