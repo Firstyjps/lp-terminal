@@ -779,3 +779,42 @@ th.sortable.on { color: var(--acc); }
 /* positions: per-card value + earning strip */
 .pos-earn { margin-top: 2px; }
 .pos-earn .k { color: var(--dim); margin-right: 8px; text-transform: uppercase; font-size: 0.9em; letter-spacing: 0.4px; }
+
+/* ---------- analyze tab (chain analytics) ---------- */
+.an-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+.an-tile { border: 1px solid var(--line); background: var(--panel2); padding: 8px 10px; }
+.an-tile .lbl { color: var(--dim); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.6px; }
+.an-tile .val { font-size: 1.3em; margin-top: 2px; }
+.an-tile .sub { font-size: 0.85em; margin-top: 2px; }
+.an-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.an-chart { border: 1px solid var(--line); background: var(--panel2); padding: 6px 8px 2px; position: relative; }
+.an-chart .lbl { color: var(--dim); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 2px; }
+.an-chart svg { display: block; }
+.an-axis { fill: var(--dim); font-size: 10px; font-family: inherit; }
+.an-grid { stroke: var(--line); stroke-width: 1; }
+.an-line { fill: none; stroke: var(--acc); stroke-width: 2; }
+.an-area { fill: rgba(var(--acc-rgb), 0.12); stroke: none; }
+.an-bar { fill: var(--acc-dim); }
+.an-bar.hi { fill: var(--acc); }
+.an-cross { stroke: var(--line-hi); stroke-width: 1; stroke-dasharray: 3 2; }
+.an-dot { fill: var(--acc); }
+.an-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--line-hi);
+  padding: 2px 6px;
+  font-size: 0.82em;
+  white-space: nowrap;
+  z-index: 3;
+}

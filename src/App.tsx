@@ -14,6 +14,7 @@ import { RpcControl } from './components/RpcControl'
 import { ThemeControl } from './components/ThemeControl'
 import { THEMES, useTheme } from './lib/theme'
 import { TxLogPanel } from './components/TxLogPanel'
+import { AnalyzeTab } from './components/tabs/AnalyzeTab'
 import { LabTab } from './components/tabs/LabTab'
 import { PoolsTab } from './components/tabs/PoolsTab'
 import { PositionsTab } from './components/tabs/PositionsTab'
@@ -45,12 +46,12 @@ export default function App() {
   )
 }
 
-const KEYS: Record<string, TabId> = { '1': 'pools', '2': 'positions', '3': 'swap' }
+const KEYS: Record<string, TabId> = { '1': 'pools', '2': 'positions', '3': 'analyze', '4': 'swap' }
 
 const validTab = (h: string): TabId | null => {
   if (h === 'limit') return 'swap' // LIMIT mode is a sub-view of the swap tab
   if (h === 'lab') return 'pools' // hidden component lab rides the pools slot
-  return (['pools', 'positions', 'swap'] as const).includes(h as TabId) ? (h as TabId) : null
+  return (['pools', 'positions', 'analyze', 'swap'] as const).includes(h as TabId) ? (h as TabId) : null
 }
 
 function Shell() {
@@ -73,7 +74,7 @@ function Shell() {
       const el = e.target as HTMLElement
       if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === '4') {
+      if (e.key === '5') {
         // LIMIT is a sub-view of swap; location.hash fires hashchange so the
         // mounted SwapTab syncs its mode too
         setTabState('swap')
@@ -105,6 +106,7 @@ function Shell() {
         )}
         {tab === 'pools' && (location.hash === '#lab' ? <LabTab /> : <PoolsTab />)}
         {tab === 'positions' && <PositionsTab />}
+        {tab === 'analyze' && <AnalyzeTab />}
         {tab === 'swap' && <SwapTab />}
       </div>
       <TxLogPanel />

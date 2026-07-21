@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => {
     '/kyber-setting': passthru('/kyber-setting', 'https://ks-setting.kyberswap.com'),
     '/kyber': passthru('/kyber', 'https://aggregator-api.kyberswap.com'),
     '/dexscreener': passthru('/dexscreener', 'https://api.dexscreener.com'),
+    // defillama chain analytics (ANALYZE tab) — stables first: '/llama' is a prefix of it
+    '/llama-stables': passthru('/llama-stables', 'https://stablecoins.llama.fi'),
+    '/llama': passthru('/llama', 'https://api.llama.fi'),
     '/goldsky': passthru('/goldsky', 'https://api.goldsky.com'),
     // local pool indexer (`npm run indexer`) — same-origin /api like the
     // production nginx route; the frontend falls back to client-side

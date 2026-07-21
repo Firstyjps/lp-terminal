@@ -4,11 +4,12 @@ import { fmtDur } from '../lib/format'
 import { useEpoch } from '../hooks/useEpoch'
 import { usePools } from '../hooks/usePools'
 
-export type TabId = 'pools' | 'positions' | 'swap'
+export type TabId = 'pools' | 'positions' | 'analyze' | 'swap'
 const TABS = [
   { id: 'pools', labelKey: 'hdr.pools', key: '1' },
   { id: 'positions', labelKey: 'hdr.positions', key: '2' },
-  { id: 'swap', labelKey: 'hdr.swap', key: '3' },
+  { id: 'analyze', labelKey: 'hdr.analyze', key: '3' },
+  { id: 'swap', labelKey: 'hdr.swap', key: '4' },
 ] as const
 
 export function Header(props: { tab: TabId; onTab: (t: TabId) => void }) {
