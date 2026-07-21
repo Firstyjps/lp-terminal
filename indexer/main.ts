@@ -13,6 +13,7 @@ import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
 import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
 import { startApi } from './api'
+import { tgEnabled, watchAddrs, watchCycle, watchEnabled } from './watch'
 
 /** setTimeout-chained loop — never overlaps itself, logs failures and keeps going */
 function loop(name: string, ms: number, fn: () => Promise<void>): void {
@@ -90,6 +91,13 @@ async function boot(): Promise<void> {
     await gtCycle()
     reprice()
   })
+  if (watchEnabled()) {
+    log(`[watch] tracking ${watchAddrs().length} wallet(s) · telegram ${tgEnabled() ? 'on' : 'off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)'}`)
+    await watchCycle().catch((e) => log('[watch] first cycle failed:', String(e).slice(0, 200)))
+    loop('watch', TUNE.watchMs, watchCycle)
+  } else {
+    log('[watch] disabled — set WATCH_ADDRESSES in .env to track positions')
+  }
 }
 
 process.on('SIGINT', () => {

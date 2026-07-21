@@ -5,7 +5,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { aiEnabled, aiInsight } from './ai'
 import { PORT, log, now } from './config'
-import { db, kvGet, poolCounts } from './store'
+import { db, kvGet, poolCounts, snapsFor, watchPosByOwner } from './store'
+import { tgEnabled, watchAddrs, watchEnabled } from './watch'
 
 const JSONH = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -156,6 +157,33 @@ function getHealth() {
   }
 }
 
+/** watcher status + last-known rows. Position data is public on-chain anyway;
+ *  rows are only returned for owners actually configured in WATCH_ADDRESSES. */
+function getWatch(params: Params) {
+  const owners = watchAddrs()
+  const q = (params.get('owner') ?? '').trim().toLowerCase()
+  const filtered = q ? owners.filter((o) => o === q) : owners
+  const positions = filtered.flatMap((o) => watchPosByOwner(o))
+  return {
+    enabled: watchEnabled(),
+    telegram: tgEnabled(),
+    watched: q ? owners.includes(q) : undefined,
+    asof: now(),
+    positions,
+  }
+}
+
+function getPosHistory(params: Params) {
+  const owner = (params.get('owner') ?? '').trim().toLowerCase()
+  const npm = (params.get('npm') ?? '').trim()
+  const id = (params.get('id') ?? '').trim()
+  if (!watchAddrs().includes(owner) || !['up33', 'univ3'].includes(npm) || !/^\d{1,78}$/.test(id)) {
+    return { snaps: [] }
+  }
+  const days = Math.min(Math.max(Number(params.get('days')) || 30, 1), 365)
+  return { snaps: snapsFor(owner, npm, id, now() - days * 86_400) }
+}
+
 export function startApi(): void {
   const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now()
@@ -170,6 +198,13 @@ export function startApi(): void {
       let cache = 'public, max-age=10'
       if (url.pathname === '/api/pools') body = getPools(url.searchParams)
       else if (url.pathname === '/api/tokens') body = getTokens(url.searchParams)
+      else if (url.pathname === '/api/watch') {
+        body = getWatch(url.searchParams)
+        cache = 'no-store'
+      } else if (url.pathname === '/api/pos-history') {
+        body = getPosHistory(url.searchParams)
+        cache = 'no-store'
+      }
       else if (url.pathname === '/api/health') {
         body = getHealth()
         cache = 'no-store'

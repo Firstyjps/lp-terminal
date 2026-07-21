@@ -16,6 +16,9 @@ export const DB_PATH =
   process.env.INDEXER_DB || fileURLToPath(new URL('./data/index.db', import.meta.url))
 
 export const TUNE = {
+  watchMs: 60_000, // position watcher cycle (WATCH_ADDRESSES)
+  watchSnapMs: 300_000, // min gap between stored position snapshots
+  watchSnapKeepDays: 120, // snapshot retention
   tailMs: 10_000, // factory tail + v2 allPairsLength poll
   hotSweepMs: 60_000, // state refresh for hot pools
   fullSweepMs: 3_600_000, // state refresh for ACTIVE pools (≥$100 TVL or <48h old)
@@ -30,19 +33,22 @@ export const TUNE = {
   gtFreshSecs: 1_800, // GT prices younger than this are never overwritten by propagation
 }
 
-/** repo-root .env `RPC` (SECRET — never log/print it). Fallback: key-free public RPC. */
-export function rpcUrl(): string {
-  const env = process.env.RPC?.trim()
+/** process.env KEY, else repo-root .env KEY (values may be SECRET — never log/print) */
+export function envVal(key: string): string | null {
+  const env = process.env[key]?.trim()
   if (env) return env
   try {
     const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
-    const m = text.match(/^\s*RPC\s*=\s*(\S+)\s*$/m)
+    const m = text.match(new RegExp(`^\\s*${key}\\s*=\\s*(\\S+)\\s*$`, 'm'))
     if (m) return m[1]
   } catch {
-    /* no repo .env — public RPC below */
+    /* no repo .env */
   }
-  return PUBLIC_RPC
+  return null
 }
+
+/** repo-root .env `RPC` (SECRET — never log/print it). Fallback: key-free public RPC. */
+export const rpcUrl = (): string => envVal('RPC') ?? PUBLIC_RPC
 
 export const now = () => Math.floor(Date.now() / 1000)
 

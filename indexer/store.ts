@@ -63,6 +63,46 @@ CREATE TABLE IF NOT EXISTS pool_stats (
 );
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+
+-- position watcher (WATCH_ADDRESSES): last-known CL position state per NFT
+CREATE TABLE IF NOT EXISTS watch_positions (
+  owner          TEXT NOT NULL,             -- lowercase wallet
+  npm            TEXT NOT NULL,             -- 'up33' | 'univ3' (which position manager)
+  token_id       TEXT NOT NULL,             -- NFT id (bigint as text)
+  pool           TEXT,                      -- lowercase pool address
+  token0         TEXT, token1 TEXT,
+  tick_lower     INTEGER, tick_upper       INTEGER,
+  staked         INTEGER NOT NULL DEFAULT 0,
+  liquidity      TEXT NOT NULL DEFAULT '0',
+  in_range       INTEGER,                   -- last observed (NULL until first read)
+  value_usd      REAL,
+  fees_usd       REAL,                      -- uncollected (staked: earned UP value)
+  collected_usd  REAL NOT NULL DEFAULT 0,   -- cumulative, inferred from fee drops
+  first_ts       INTEGER NOT NULL,
+  first_value_usd REAL,
+  last_ts        INTEGER,
+  closed         INTEGER NOT NULL DEFAULT 0,
+  out_since      INTEGER,                   -- ts of the in->out transition
+  alerted_fee    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (owner, npm, token_id)
+);
+
+-- periodic snapshots feeding the PnL panel (one row per position per ~5min)
+CREATE TABLE IF NOT EXISTS position_snaps (
+  ts        INTEGER NOT NULL,
+  owner     TEXT NOT NULL,
+  npm       TEXT NOT NULL,
+  token_id  TEXT NOT NULL,
+  liquidity TEXT,
+  tick      INTEGER,
+  in_range  INTEGER,
+  amount0   TEXT, amount1 TEXT,
+  fees0     TEXT, fees1  TEXT,
+  earned_up TEXT,
+  value_usd REAL, fees_usd REAL,
+  PRIMARY KEY (owner, npm, token_id, ts)
+);
+CREATE INDEX IF NOT EXISTS idx_snaps_ts ON position_snaps(ts);
 `)
 
 // additive migrations for DBs created before these columns existed
@@ -228,6 +268,79 @@ export const activeAddrs = (): string[] =>
       )
       .all(100, now() - 172_800) as { address: string }[]
   ).map((r) => r.address)
+
+// ---- position watcher ----
+export type WatchPosRow = {
+  owner: string
+  npm: 'up33' | 'univ3'
+  token_id: string
+  pool: string | null
+  token0: string | null
+  token1: string | null
+  tick_lower: number | null
+  tick_upper: number | null
+  staked: number
+  liquidity: string
+  in_range: number | null
+  value_usd: number | null
+  fees_usd: number | null
+  collected_usd: number
+  first_ts: number
+  first_value_usd: number | null
+  last_ts: number | null
+  closed: number
+  out_since: number | null
+  alerted_fee: number
+}
+
+const upWatchQ = db.prepare(`
+  INSERT INTO watch_positions (owner, npm, token_id, pool, token0, token1, tick_lower, tick_upper,
+    staked, liquidity, in_range, value_usd, fees_usd, collected_usd, first_ts, first_value_usd, last_ts,
+    closed, out_since, alerted_fee)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(owner, npm, token_id) DO UPDATE SET pool = excluded.pool,
+    token0 = excluded.token0, token1 = excluded.token1,
+    tick_lower = excluded.tick_lower, tick_upper = excluded.tick_upper,
+    staked = excluded.staked, liquidity = excluded.liquidity, in_range = excluded.in_range,
+    value_usd = excluded.value_usd, fees_usd = excluded.fees_usd, collected_usd = excluded.collected_usd,
+    last_ts = excluded.last_ts, closed = excluded.closed, out_since = excluded.out_since,
+    alerted_fee = excluded.alerted_fee`)
+export const upsertWatchPos = (r: WatchPosRow) =>
+  void upWatchQ.run(
+    r.owner, r.npm, r.token_id, r.pool, r.token0, r.token1, r.tick_lower, r.tick_upper,
+    r.staked, r.liquidity, r.in_range, r.value_usd, r.fees_usd, r.collected_usd,
+    r.first_ts, r.first_value_usd, r.last_ts, r.closed, r.out_since, r.alerted_fee,
+  )
+
+const watchByOwnerQ = db.prepare('SELECT * FROM watch_positions WHERE owner = ?')
+export const watchPosByOwner = (owner: string) => watchByOwnerQ.all(owner.toLowerCase()) as WatchPosRow[]
+
+export const insSnapQ = db.prepare(`
+  INSERT OR REPLACE INTO position_snaps (ts, owner, npm, token_id, liquidity, tick, in_range,
+    amount0, amount1, fees0, fees1, earned_up, value_usd, fees_usd)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+
+const lastSnapQ = db.prepare(
+  'SELECT MAX(ts) AS ts FROM position_snaps WHERE owner = ? AND npm = ? AND token_id = ?',
+)
+export const lastSnapTs = (owner: string, npm: string, id: string): number =>
+  Number((lastSnapQ.get(owner, npm, id) as { ts: number | null }).ts ?? 0)
+
+const snapsQ = db.prepare(`
+  SELECT ts, liquidity, tick, in_range, amount0, amount1, fees0, fees1, earned_up, value_usd, fees_usd
+  FROM position_snaps WHERE owner = ? AND npm = ? AND token_id = ? AND ts >= ? ORDER BY ts`)
+export const snapsFor = (owner: string, npm: string, id: string, sinceTs: number) =>
+  snapsQ.all(owner.toLowerCase(), npm, id, sinceTs) as Record<string, unknown>[]
+
+export const pruneSnaps = (beforeTs: number): number =>
+  Number(db.prepare('DELETE FROM position_snaps WHERE ts < ?').run(beforeTs).changes)
+
+export const tokenRows = (addrs: string[]): TokenRow[] =>
+  addrs.length
+    ? (db
+        .prepare(`SELECT * FROM tokens WHERE address IN (${addrs.map(() => '?').join(',')})`)
+        .all(...addrs.map((a) => a.toLowerCase())) as TokenRow[])
+    : []
 
 export const tx = (fn: () => void) => {
   db.exec('BEGIN')
