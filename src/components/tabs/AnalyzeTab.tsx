@@ -7,11 +7,12 @@ import { fmtCompact, fmtUsd } from '../../lib/format'
 type Range = 30 | 90 | 0 // days shown in the charts; 0 = full history
 type ProtoSort = 'vol24' | 'vol7' | 'fees24' | 'fees7'
 
+const INS_KEY = 'lp.an.ins.v1' // '0' = insights panel collapsed
+
 const fmtUsdC = (x?: number | null) => (x == null || !Number.isFinite(x) ? '—' : '$' + fmtCompact(x))
 const fmtChg = (x?: number | null) =>
   x == null || !Number.isFinite(x) ? '—' : `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`
-const chgCls = (x?: number | null) =>
-  x == null || !Number.isFinite(x) ? 'dim' : x >= 0 ? 'green' : 'red'
+const chgCls = (x?: number | null) => (x == null || !Number.isFinite(x) ? 'dim' : x >= 0 ? 'green' : 'red')
 const day = (ts: number) => new Date(ts * 1000).toISOString().slice(5, 10) // MM-DD (UTC)
 
 // ---- 7d trend insights, derived entirely from the already-fetched series ----
@@ -74,7 +75,10 @@ function computeInsights(
       }
   }
   if (ins.vol && dexFees && ins.vol.cur > 0 && ins.vol.prev > 0)
-    ins.take = { cur: (dexFees.cur / ins.vol.cur) * 10_000, prev: (dexFees.prev / ins.vol.prev) * 10_000 }
+    ins.take = {
+      cur: (dexFees.cur / ins.vol.cur) * 10_000,
+      prev: (dexFees.prev / ins.vol.prev) * 10_000,
+    }
 
   if (tvlS.length >= 8) {
     const last = tvlS[tvlS.length - 1][1]
@@ -115,9 +119,7 @@ function computeInsights(
     const names = Object.keys(cur)
     if (names.length) {
       const leader = names.reduce((a, b) => (cur[a] >= cur[b] ? a : b))
-      const riser = names.reduce((a, b) =>
-        cur[a] - (prev[a] ?? 0) >= cur[b] - (prev[b] ?? 0) ? a : b,
-      )
+      const riser = names.reduce((a, b) => (cur[a] - (prev[a] ?? 0) >= cur[b] - (prev[b] ?? 0) ? a : b))
       ins.lead = {
         name: leader,
         share: cur[leader],
@@ -146,11 +148,18 @@ export function AnalyzeTab() {
   const stables = useStables()
   const [range, setRange] = useState<Range>(30)
   const [sort, setSort] = useState<ProtoSort>('vol24')
+  // collapsed state persists like the watchlist / theme prefs
+  const [insOpen, setInsOpen] = useState(() => localStorage.getItem(INS_KEY) !== '0')
+  const toggleIns = () => {
+    setInsOpen(!insOpen)
+    try {
+      localStorage.setItem(INS_KEY, insOpen ? '0' : '1')
+    } catch {
+      /* storage blocked — just won't persist */
+    }
+  }
 
-  const tvlSeries = useMemo(
-    () => (tvl.data ?? []).map((p): SeriesPoint => [p.date, p.tvl]),
-    [tvl.data],
-  )
+  const tvlSeries = useMemo(() => (tvl.data ?? []).map((p): SeriesPoint => [p.date, p.tvl]), [tvl.data])
   const clip = (s: SeriesPoint[]) => (range === 0 ? s : s.slice(-range))
 
   // one protocol table out of the two overviews, merged by protocol name
@@ -174,7 +183,10 @@ export function AnalyzeTab() {
         volChg: p.change_1d,
       })
     for (const p of fees.data?.protocols ?? []) {
-      const r = m.get(p.name) ?? { name: p.displayName ?? p.name, category: p.category }
+      const r = m.get(p.name) ?? {
+        name: p.displayName ?? p.name,
+        category: p.category,
+      }
       r.fees24 = p.total24h
       r.fees7 = p.total7d
       m.set(p.name, r)
@@ -237,94 +249,126 @@ export function AnalyzeTab() {
     <div className="tab-fill">
       <div className="an-tiles">
         <Tile label={t('an.tvl')} value={fmtUsdC(lastTvl)} chg={tvlChg} chgLbl={t('an.chg1d')} />
-        <Tile label={t('an.vol24')} value={fmtUsdC(dex.data?.total24h)} chg={dex.data?.change_1d} chgLbl={t('an.chg1d')} />
-        <Tile label={t('an.fees24')} value={fmtUsdC(fees.data?.total24h)} chg={fees.data?.change_1d} chgLbl={t('an.chg1d')} />
+        <Tile
+          label={t('an.vol24')}
+          value={fmtUsdC(dex.data?.total24h)}
+          chg={dex.data?.change_1d}
+          chgLbl={t('an.chg1d')}
+        />
+        <Tile
+          label={t('an.fees24')}
+          value={fmtUsdC(fees.data?.total24h)}
+          chg={fees.data?.change_1d}
+          chgLbl={t('an.chg1d')}
+        />
         <Tile label={t('an.stables')} value={fmtUsdC(lastStable)} />
-        <Tile label={t('an.vol7')} value={fmtUsdC(dex.data?.total7d)} sub={`${t('an.d30')} ${fmtUsdC(dex.data?.total30d)}`} />
-        <Tile label={t('an.fees7')} value={fmtUsdC(fees.data?.total7d)} sub={`${t('an.d30')} ${fmtUsdC(fees.data?.total30d)}`} />
+        <Tile
+          label={t('an.vol7')}
+          value={fmtUsdC(dex.data?.total7d)}
+          sub={`${t('an.d30')} ${fmtUsdC(dex.data?.total30d)}`}
+        />
+        <Tile
+          label={t('an.fees7')}
+          value={fmtUsdC(fees.data?.total7d)}
+          sub={`${t('an.d30')} ${fmtUsdC(fees.data?.total30d)}`}
+        />
       </div>
-      <div className="section-title">{t('an.insTitle')}</div>
-      <div className="an-ins">
-        {ins.vol && (
-          <>
-            <span className="k">{t('an.insVol')}</span>
-            <span>
-              <Dir pct={ins.vol.pct} /> <b className={chgCls(ins.vol.pct)}>{fmtChg(ins.vol.pct)}</b>{' '}
-              {t('an.insWow', { cur: fmtUsdC(ins.vol.cur), prev: fmtUsdC(ins.vol.prev) })}
-            </span>
-          </>
-        )}
-        {ins.fees && (
-          <>
-            <span className="k">{t('an.insFees')}</span>
-            <span>
-              <Dir pct={ins.fees.pct} /> <b className={chgCls(ins.fees.pct)}>{fmtChg(ins.fees.pct)}</b>{' '}
-              {t('an.insWow', { cur: fmtUsdC(ins.fees.cur), prev: fmtUsdC(ins.fees.prev) })}
-            </span>
-          </>
-        )}
-        {ins.apr && (
-          <>
-            <span className="k">{t('an.insApr')}</span>
-            <span>
-              <Dir pct={ins.apr.cur - ins.apr.prev} th={0.3} /> <b>{ins.apr.cur.toFixed(1)}%</b>{' '}
-              {t('an.insAprTxt', { prev: ins.apr.prev.toFixed(1) })}
-            </span>
-          </>
-        )}
-        {ins.take && (
-          <>
-            <span className="k">{t('an.insTake')}</span>
-            <span>
-              <Dir pct={ins.take.cur - ins.take.prev} th={0.3} /> <b>{ins.take.cur.toFixed(1)}bps</b>{' '}
-              {t('an.insTakeTxt', { prev: ins.take.prev.toFixed(1) })}
-            </span>
-          </>
-        )}
-        {ins.tvl && (
-          <>
-            <span className="k">{t('an.insTvl')}</span>
-            <span>
-              <Dir pct={ins.tvl.pct} /> <b className={chgCls(ins.tvl.pct)}>{fmtChg(ins.tvl.pct)}</b>{' '}
-              {t('an.insTvlTxt', { flow: fmtUsdC(Math.abs(ins.tvl.flow)) })}{' '}
-              <span className="dim">
-                (
-                {ins.tvl.kind === 'new'
-                  ? t('an.insKindNew')
-                  : ins.tvl.kind === 'price'
-                    ? t('an.insKindPrice')
-                    : t('an.insKindOut')}
-                )
+      <button className="section-title an-ins-toggle" onClick={toggleIns} title={t('an.insToggleTip')}>
+        {insOpen ? '▾' : '▸'} {t('an.insTitle')}
+      </button>
+      {insOpen && (
+        <div className="an-ins">
+          {ins.vol && (
+            <>
+              <span className="k">{t('an.insVol')}</span>
+              <span>
+                <Dir pct={ins.vol.pct} /> <b className={chgCls(ins.vol.pct)}>{fmtChg(ins.vol.pct)}</b>{' '}
+                {t('an.insWow', {
+                  cur: fmtUsdC(ins.vol.cur),
+                  prev: fmtUsdC(ins.vol.prev),
+                })}
               </span>
-            </span>
-          </>
-        )}
-        {ins.spike !== undefined && (
-          <>
-            <span className="k">{t('an.insSpike')}</span>
-            {ins.spike ? (
-              <span className="amber">
-                ! {t('an.insSpikeTxt', { v: fmtUsdC(ins.spike.v), x: ins.spike.x.toFixed(1) })}
+            </>
+          )}
+          {ins.fees && (
+            <>
+              <span className="k">{t('an.insFees')}</span>
+              <span>
+                <Dir pct={ins.fees.pct} /> <b className={chgCls(ins.fees.pct)}>{fmtChg(ins.fees.pct)}</b>{' '}
+                {t('an.insWow', {
+                  cur: fmtUsdC(ins.fees.cur),
+                  prev: fmtUsdC(ins.fees.prev),
+                })}
               </span>
-            ) : (
-              <span className="dim">{t('an.insSpikeNone')}</span>
-            )}
-          </>
-        )}
-        {ins.lead && (
-          <>
-            <span className="k">{t('an.insLead')}</span>
-            <span>
-              <b>{ins.lead.name}</b> {t('an.insLeadTxt', { share: ins.lead.share.toFixed(0) })} ·{' '}
-              {t('an.insRiser')} <b>{ins.lead.riser}</b>{' '}
-              <span className={chgCls(ins.lead.delta)}>
-                {ins.lead.delta >= 0 ? '+' : ''}
-                {ins.lead.delta.toFixed(1)}pp
+            </>
+          )}
+          {ins.apr && (
+            <>
+              <span className="k">{t('an.insApr')}</span>
+              <span>
+                <Dir pct={ins.apr.cur - ins.apr.prev} th={0.3} /> <b>{ins.apr.cur.toFixed(1)}%</b>{' '}
+                {t('an.insAprTxt', { prev: ins.apr.prev.toFixed(1) })}
               </span>
-            </span>
-          </>
-        )}
-      </div>
+            </>
+          )}
+          {ins.take && (
+            <>
+              <span className="k">{t('an.insTake')}</span>
+              <span>
+                <Dir pct={ins.take.cur - ins.take.prev} th={0.3} /> <b>{ins.take.cur.toFixed(1)}bps</b>{' '}
+                {t('an.insTakeTxt', { prev: ins.take.prev.toFixed(1) })}
+              </span>
+            </>
+          )}
+          {ins.tvl && (
+            <>
+              <span className="k">{t('an.insTvl')}</span>
+              <span>
+                <Dir pct={ins.tvl.pct} /> <b className={chgCls(ins.tvl.pct)}>{fmtChg(ins.tvl.pct)}</b>{' '}
+                {t('an.insTvlTxt', { flow: fmtUsdC(Math.abs(ins.tvl.flow)) })}{' '}
+                <span className="dim">
+                  (
+                  {ins.tvl.kind === 'new'
+                    ? t('an.insKindNew')
+                    : ins.tvl.kind === 'price'
+                      ? t('an.insKindPrice')
+                      : t('an.insKindOut')}
+                  )
+                </span>
+              </span>
+            </>
+          )}
+          {ins.spike !== undefined && (
+            <>
+              <span className="k">{t('an.insSpike')}</span>
+              {ins.spike ? (
+                <span className="amber">
+                  !{' '}
+                  {t('an.insSpikeTxt', {
+                    v: fmtUsdC(ins.spike.v),
+                    x: ins.spike.x.toFixed(1),
+                  })}
+                </span>
+              ) : (
+                <span className="dim">{t('an.insSpikeNone')}</span>
+              )}
+            </>
+          )}
+          {ins.lead && (
+            <>
+              <span className="k">{t('an.insLead')}</span>
+              <span>
+                <b>{ins.lead.name}</b> {t('an.insLeadTxt', { share: ins.lead.share.toFixed(0) })} ·{' '}
+                {t('an.insRiser')} <b>{ins.lead.riser}</b>{' '}
+                <span className={chgCls(ins.lead.delta)}>
+                  {ins.lead.delta >= 0 ? '+' : ''}
+                  {ins.lead.delta.toFixed(1)}pp
+                </span>
+              </span>
+            </>
+          )}
+        </div>
+      )}
       <div className="form-row">
         {([30, 90, 0] as const).map((r) => (
           <button key={r} className={`chip ${range === r ? 'on' : ''}`} onClick={() => setRange(r)}>
@@ -333,7 +377,9 @@ export function AnalyzeTab() {
         ))}
         {(tvl.isError || dex.isError || fees.isError) && (
           <span className="red mono-sm">
-            {t('an.failed', { err: String(tvl.error ?? dex.error ?? fees.error).slice(0, 60) })}
+            {t('an.failed', {
+              err: String(tvl.error ?? dex.error ?? fees.error).slice(0, 60),
+            })}
           </span>
         )}
       </div>

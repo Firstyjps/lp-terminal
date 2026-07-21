@@ -511,6 +511,7 @@ export const zh: typeof en = {
     sortTip: '点击排序',
     source: '数据源: DeFiLlama（链级，Robinhood Chain 全部协议）· 每 5 分钟自动刷新 · 费用 = 用户支付的总费用',
     insTitle: '洞察 · 7 天趋势（完整 UTC 天）',
+    insToggleTip: '折叠/展开 — 无论折叠与否都会自动刷新',
     insVol: '交易量',
     insFees: '费用',
     insApr: '费用 APR',

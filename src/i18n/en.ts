@@ -515,6 +515,7 @@ export const en = {
     source:
       'source: DeFiLlama (chain-level, every protocol on Robinhood Chain) · auto-refresh 5 min · fees = gross fees paid by users',
     insTitle: 'insights · 7d trends (full UTC days)',
+    insToggleTip: 'collapse/expand — keeps auto-refreshing either way',
     insVol: 'VOLUME',
     insFees: 'FEES',
     insApr: 'FEE APR',
