@@ -14,6 +14,130 @@ const chgCls = (x?: number | null) =>
   x == null || !Number.isFinite(x) ? 'dim' : x >= 0 ? 'green' : 'red'
 const day = (ts: number) => new Date(ts * 1000).toISOString().slice(5, 10) // MM-DD (UTC)
 
+// ---- 7d trend insights, derived entirely from the already-fetched series ----
+type Wow = { cur: number; prev: number; pct: number }
+type Insights = {
+  vol?: Wow
+  fees?: Wow
+  /** annualized fee yield on TVL, % — this week vs the week before */
+  apr?: { cur: number; prev: number }
+  /** effective fee rate, bps of volume — this week vs the week before */
+  take?: { cur: number; prev: number }
+  tvl?: { pct: number; flow: number; kind: 'new' | 'price' | 'out' }
+  /** yesterday's volume vs the 30d daily mean (null = within normal range) */
+  spike?: { v: number; x: number } | null
+  lead?: { name: string; share: number; riser: string; delta: number }
+}
+
+const sumRange = (s: SeriesPoint[], from: number, to?: number) =>
+  s.slice(from, to).reduce((a, p) => a + p[1], 0)
+
+function wow(chart: SeriesPoint[]): Wow | undefined {
+  // last point is the running (partial) UTC day — compare the 7 full days before
+  // it against the 7 before those
+  if (chart.length < 15) return undefined
+  const cur = sumRange(chart, -8, -1)
+  const prev = sumRange(chart, -15, -8)
+  return prev > 0 ? { cur, prev, pct: ((cur - prev) / prev) * 100 } : undefined
+}
+
+function computeInsights(
+  volC: SeriesPoint[],
+  feeC: SeriesPoint[],
+  tvlS: SeriesPoint[],
+  stables: SeriesPoint[],
+  breakdown: [number, Record<string, number>][],
+  feesBreakdown: [number, Record<string, number>][],
+  dexNames: Set<string>,
+): Insights {
+  const ins: Insights = { vol: wow(volC), fees: wow(feeC) }
+
+  // APR / take rate use DEX fees only — the fees overview also counts
+  // launchpads, mining games etc. whose fees never reach an LP
+  const dexFeeC: SeriesPoint[] = feesBreakdown.map(([ts, byProto]) => [
+    ts,
+    Object.entries(byProto).reduce((a, [name, v]) => (dexNames.has(name) ? a + v : a), 0),
+  ])
+  const dexFees = wow(dexFeeC)
+
+  const meanTvl = (from: number, to?: number) => {
+    const s = tvlS.slice(from, to)
+    return s.length ? s.reduce((a, p) => a + p[1], 0) / s.length : 0
+  }
+  if (dexFees && tvlS.length >= 14) {
+    const t1 = meanTvl(-7)
+    const t2 = meanTvl(-14, -7)
+    if (t1 > 0 && t2 > 0)
+      ins.apr = {
+        cur: (dexFees.cur / t1) * (365 / 7) * 100,
+        prev: (dexFees.prev / t2) * (365 / 7) * 100,
+      }
+  }
+  if (ins.vol && dexFees && ins.vol.cur > 0 && ins.vol.prev > 0)
+    ins.take = { cur: (dexFees.cur / ins.vol.cur) * 10_000, prev: (dexFees.prev / ins.vol.prev) * 10_000 }
+
+  if (tvlS.length >= 8) {
+    const last = tvlS[tvlS.length - 1][1]
+    const ago = tvlS[tvlS.length - 8][1]
+    const dTvl = last - ago
+    let flow = 0
+    if (stables.length >= 8) flow = stables[stables.length - 1][1] - stables[stables.length - 8][1]
+    ins.tvl = {
+      pct: ago > 0 ? (dTvl / ago) * 100 : 0,
+      flow,
+      kind: dTvl < 0 ? 'out' : flow >= 0.4 * dTvl ? 'new' : 'price',
+    }
+  }
+
+  // volume anomaly: yesterday (last full day) vs the mean of the 30 days before it
+  if (volC.length >= 10) {
+    const yv = volC[volC.length - 2][1]
+    const base = volC.slice(Math.max(0, volC.length - 32), -2)
+    const mean = base.reduce((a, p) => a + p[1], 0) / base.length
+    ins.spike = mean > 0 && yv >= 1.8 * mean ? { v: yv, x: yv / mean } : null
+  }
+
+  // 7d market share per protocol vs the week before → leader + fastest riser
+  if (breakdown.length >= 15) {
+    const share = (from: number, to: number) => {
+      const acc: Record<string, number> = {}
+      let tot = 0
+      for (const [, byProto] of breakdown.slice(from, to))
+        for (const [name, v] of Object.entries(byProto)) {
+          acc[name] = (acc[name] ?? 0) + v
+          tot += v
+        }
+      if (tot > 0) for (const k of Object.keys(acc)) acc[k] = (acc[k] / tot) * 100
+      return acc
+    }
+    const cur = share(-8, -1)
+    const prev = share(-15, -8)
+    const names = Object.keys(cur)
+    if (names.length) {
+      const leader = names.reduce((a, b) => (cur[a] >= cur[b] ? a : b))
+      const riser = names.reduce((a, b) =>
+        cur[a] - (prev[a] ?? 0) >= cur[b] - (prev[b] ?? 0) ? a : b,
+      )
+      ins.lead = {
+        name: leader,
+        share: cur[leader],
+        riser,
+        delta: cur[riser] - (prev[riser] ?? 0),
+      }
+    }
+  }
+  return ins
+}
+
+/** trend marker: ▲/▼/― on a small threshold so noise reads as flat */
+function Dir(props: { pct?: number; th?: number }) {
+  const th = props.th ?? 2
+  if (props.pct == null || !Number.isFinite(props.pct)) return <span className="dim">―</span>
+  if (props.pct > th) return <span className="green">▲</span>
+  if (props.pct < -th) return <span className="red">▼</span>
+  return <span className="dim">―</span>
+}
+
 export function AnalyzeTab() {
   const { t } = useTranslation()
   const tvl = useChainTvl()
@@ -64,6 +188,24 @@ export function AnalyzeTab() {
     return [...m.values()].sort((a, b) => key[sort](b) - key[sort](a))
   }, [dex.data, fees.data, sort])
 
+  const ins = useMemo(() => {
+    // every protocol in the *dexs* overview is a DEX — its fees are LP-side
+    const dexNames = new Set<string>()
+    for (const p of dex.data?.protocols ?? []) {
+      dexNames.add(p.name)
+      if (p.displayName) dexNames.add(p.displayName)
+    }
+    return computeInsights(
+      dex.data?.totalDataChart ?? [],
+      fees.data?.totalDataChart ?? [],
+      tvlSeries,
+      stables.data ?? [],
+      dex.data?.totalDataChartBreakdown ?? [],
+      fees.data?.totalDataChartBreakdown ?? [],
+      dexNames,
+    )
+  }, [dex.data, fees.data, tvlSeries, stables.data])
+
   const loading = tvl.isLoading && dex.isLoading && fees.isLoading
   if (loading)
     return (
@@ -100,6 +242,88 @@ export function AnalyzeTab() {
         <Tile label={t('an.stables')} value={fmtUsdC(lastStable)} />
         <Tile label={t('an.vol7')} value={fmtUsdC(dex.data?.total7d)} sub={`${t('an.d30')} ${fmtUsdC(dex.data?.total30d)}`} />
         <Tile label={t('an.fees7')} value={fmtUsdC(fees.data?.total7d)} sub={`${t('an.d30')} ${fmtUsdC(fees.data?.total30d)}`} />
+      </div>
+      <div className="section-title">{t('an.insTitle')}</div>
+      <div className="an-ins">
+        {ins.vol && (
+          <>
+            <span className="k">{t('an.insVol')}</span>
+            <span>
+              <Dir pct={ins.vol.pct} /> <b className={chgCls(ins.vol.pct)}>{fmtChg(ins.vol.pct)}</b>{' '}
+              {t('an.insWow', { cur: fmtUsdC(ins.vol.cur), prev: fmtUsdC(ins.vol.prev) })}
+            </span>
+          </>
+        )}
+        {ins.fees && (
+          <>
+            <span className="k">{t('an.insFees')}</span>
+            <span>
+              <Dir pct={ins.fees.pct} /> <b className={chgCls(ins.fees.pct)}>{fmtChg(ins.fees.pct)}</b>{' '}
+              {t('an.insWow', { cur: fmtUsdC(ins.fees.cur), prev: fmtUsdC(ins.fees.prev) })}
+            </span>
+          </>
+        )}
+        {ins.apr && (
+          <>
+            <span className="k">{t('an.insApr')}</span>
+            <span>
+              <Dir pct={ins.apr.cur - ins.apr.prev} th={0.3} /> <b>{ins.apr.cur.toFixed(1)}%</b>{' '}
+              {t('an.insAprTxt', { prev: ins.apr.prev.toFixed(1) })}
+            </span>
+          </>
+        )}
+        {ins.take && (
+          <>
+            <span className="k">{t('an.insTake')}</span>
+            <span>
+              <Dir pct={ins.take.cur - ins.take.prev} th={0.3} /> <b>{ins.take.cur.toFixed(1)}bps</b>{' '}
+              {t('an.insTakeTxt', { prev: ins.take.prev.toFixed(1) })}
+            </span>
+          </>
+        )}
+        {ins.tvl && (
+          <>
+            <span className="k">{t('an.insTvl')}</span>
+            <span>
+              <Dir pct={ins.tvl.pct} /> <b className={chgCls(ins.tvl.pct)}>{fmtChg(ins.tvl.pct)}</b>{' '}
+              {t('an.insTvlTxt', { flow: fmtUsdC(Math.abs(ins.tvl.flow)) })}{' '}
+              <span className="dim">
+                (
+                {ins.tvl.kind === 'new'
+                  ? t('an.insKindNew')
+                  : ins.tvl.kind === 'price'
+                    ? t('an.insKindPrice')
+                    : t('an.insKindOut')}
+                )
+              </span>
+            </span>
+          </>
+        )}
+        {ins.spike !== undefined && (
+          <>
+            <span className="k">{t('an.insSpike')}</span>
+            {ins.spike ? (
+              <span className="amber">
+                ! {t('an.insSpikeTxt', { v: fmtUsdC(ins.spike.v), x: ins.spike.x.toFixed(1) })}
+              </span>
+            ) : (
+              <span className="dim">{t('an.insSpikeNone')}</span>
+            )}
+          </>
+        )}
+        {ins.lead && (
+          <>
+            <span className="k">{t('an.insLead')}</span>
+            <span>
+              <b>{ins.lead.name}</b> {t('an.insLeadTxt', { share: ins.lead.share.toFixed(0) })} ·{' '}
+              {t('an.insRiser')} <b>{ins.lead.riser}</b>{' '}
+              <span className={chgCls(ins.lead.delta)}>
+                {ins.lead.delta >= 0 ? '+' : ''}
+                {ins.lead.delta.toFixed(1)}pp
+              </span>
+            </span>
+          </>
+        )}
       </div>
       <div className="form-row">
         {([30, 90, 0] as const).map((r) => (

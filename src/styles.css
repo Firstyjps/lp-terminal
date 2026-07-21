@@ -818,3 +818,15 @@ th.sortable.on { color: var(--acc); }
   white-space: nowrap;
   z-index: 3;
 }
+
+/* analyze: insights readout */
+.an-ins {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  padding: 8px 10px;
+  font-size: 0.95em;
+}
+.an-ins .k { color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.85em; align-self: center; }

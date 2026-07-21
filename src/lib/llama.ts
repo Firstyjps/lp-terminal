@@ -24,6 +24,8 @@ export type LlamaOverview = {
   change_1d?: number
   change_7d?: number
   totalDataChart?: SeriesPoint[]
+  /** [unix seconds, usd per protocol] — daily per-protocol split */
+  totalDataChartBreakdown?: [number, Record<string, number>][]
   protocols?: LlamaProto[]
 }
 
@@ -36,10 +38,14 @@ async function getJson<T>(url: string): Promise<T> {
 export const fetchChainTvl = () => getJson<TvlPoint[]>(`/llama/v2/historicalChainTvl/${CHAIN}`)
 
 export const fetchDexOverview = () =>
-  getJson<LlamaOverview>(`/llama/overview/dexs/${CHAIN}?excludeTotalDataChart=false`)
+  getJson<LlamaOverview>(
+    `/llama/overview/dexs/${CHAIN}?excludeTotalDataChart=false&excludeTotalDataChartBreakdown=false`,
+  )
 
 export const fetchFeesOverview = () =>
-  getJson<LlamaOverview>(`/llama/overview/fees/${CHAIN}?excludeTotalDataChart=false`)
+  getJson<LlamaOverview>(
+    `/llama/overview/fees/${CHAIN}?excludeTotalDataChart=false&excludeTotalDataChartBreakdown=false`,
+  )
 
 type StablePoint = { date: string; totalCirculatingUSD?: { peggedUSD?: number } }
 
