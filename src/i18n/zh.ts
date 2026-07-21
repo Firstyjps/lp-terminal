@@ -530,5 +530,9 @@ export const zh: typeof en = {
     insSpikeNone: '交易量无异常 — 昨日处于 30 天正常范围内',
     insLeadTxt: '占 7 天交易量 {{share}}%',
     insRiser: '增长最快:',
+    aiTitle: 'AI 洞察 · deepseek',
+    aiThinking: '思考中',
+    aiOffline: 'AI 大脑离线 — 服务器未配置 api key',
+    aiDisclaimer: 'AI 生成的市场评论，每小时更新 — 不构成投资建议',
   },
 }

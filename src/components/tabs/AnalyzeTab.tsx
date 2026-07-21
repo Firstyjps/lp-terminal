@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useChainTvl, useDexOverview, useFeesOverview, useStables } from '../../hooks/useChainAnalytics'
+import { useAiInsight, useChainTvl, useDexOverview, useFeesOverview, useStables } from '../../hooks/useChainAnalytics'
+import { currentLang } from '../../i18n'
 import type { SeriesPoint } from '../../lib/llama'
 import { fmtCompact, fmtUsd } from '../../lib/format'
 
@@ -8,6 +9,7 @@ type Range = 30 | 90 | 0 // days shown in the charts; 0 = full history
 type ProtoSort = 'vol24' | 'vol7' | 'fees24' | 'fees7'
 
 const INS_KEY = 'lp.an.ins.v1' // '0' = insights panel collapsed
+const AI_KEY = 'lp.an.ai.v1' // '0' = ai panel collapsed
 
 const fmtUsdC = (x?: number | null) => (x == null || !Number.isFinite(x) ? '—' : '$' + fmtCompact(x))
 const fmtChg = (x?: number | null) =>
@@ -146,14 +148,24 @@ export function AnalyzeTab() {
   const dex = useDexOverview()
   const fees = useFeesOverview()
   const stables = useStables()
+  const ai = useAiInsight()
   const [range, setRange] = useState<Range>(30)
   const [sort, setSort] = useState<ProtoSort>('vol24')
-  // collapsed state persists like the watchlist / theme prefs
+  // collapsed states persist like the watchlist / theme prefs
   const [insOpen, setInsOpen] = useState(() => localStorage.getItem(INS_KEY) !== '0')
   const toggleIns = () => {
     setInsOpen(!insOpen)
     try {
       localStorage.setItem(INS_KEY, insOpen ? '0' : '1')
+    } catch {
+      /* storage blocked — just won't persist */
+    }
+  }
+  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem(AI_KEY) !== '0')
+  const toggleAi = () => {
+    setAiOpen(!aiOpen)
+    try {
+      localStorage.setItem(AI_KEY, aiOpen ? '0' : '1')
     } catch {
       /* storage blocked — just won't persist */
     }
@@ -367,6 +379,29 @@ export function AnalyzeTab() {
               </span>
             </>
           )}
+        </div>
+      )}
+      <button className="section-title an-ins-toggle" onClick={toggleAi} title={t('an.insToggleTip')}>
+        {aiOpen ? '▾' : '▸'} {t('an.aiTitle')}
+      </button>
+      {aiOpen && (
+        <div className="an-ai">
+          {ai.isLoading ? (
+            <span className="dim">
+              {t('an.aiThinking')}
+              <span className="spin">▮</span>
+            </span>
+          ) : ai.isError ? (
+            <span className="dim">{t('an.aiOffline')}</span>
+          ) : ai.data ? (
+            <>
+              <div className="txt">{currentLang() === 'zh' ? ai.data.zh : ai.data.en}</div>
+              <div className="dim mono-sm meta">
+                {ai.data.model} · {day(ai.data.asof)}{' '}
+                {new Date(ai.data.asof * 1000).toISOString().slice(11, 16)}utc · {t('an.aiDisclaimer')}
+              </div>
+            </>
+          ) : null}
         </div>
       )}
       <div className="form-row">

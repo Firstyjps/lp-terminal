@@ -841,3 +841,13 @@ th.sortable.on { color: var(--acc); }
   padding: 0;
 }
 .an-ins-toggle:hover { color: var(--fg); }
+
+/* analyze: ai narrative */
+.an-ai {
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  padding: 8px 10px;
+  font-size: 0.95em;
+}
+.an-ai .txt { white-space: pre-line; line-height: 1.5; }
+.an-ai .meta { margin-top: 6px; }

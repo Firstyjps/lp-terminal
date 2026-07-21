@@ -31,6 +31,8 @@ services:
     command: ["npx", "tsx", "indexer/main.ts"]
     environment:
       RPC: ${RPC}
+      # /api/ai-insight narrative (optional — endpoint 503s without it)
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     volumes:
       - ..:/app
     networks:

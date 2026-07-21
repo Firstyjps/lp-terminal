@@ -3,6 +3,7 @@
 // strings). Served same-origin in production (nginx /api → this) and through
 // the vite dev/preview proxy locally.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { aiEnabled, aiInsight } from './ai'
 import { PORT, log, now } from './config'
 import { db, kvGet, poolCounts } from './store'
 
@@ -156,7 +157,7 @@ function getHealth() {
 }
 
 export function startApi(): void {
-  const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now()
     try {
       const url = new URL(req.url ?? '/', 'http://indexer')
@@ -172,6 +173,15 @@ export function startApi(): void {
       else if (url.pathname === '/api/health') {
         body = getHealth()
         cache = 'no-store'
+      } else if (url.pathname === '/api/ai-insight') {
+        // cached server-side completion — no user input reaches the model
+        if (!aiEnabled()) {
+          res.writeHead(503, JSONH)
+          res.end('{"error":"ai disabled"}')
+          return
+        }
+        body = await aiInsight()
+        cache = 'public, max-age=300'
       } else {
         res.writeHead(404, JSONH)
         res.end('{"error":"not found"}')

@@ -534,5 +534,9 @@ export const en = {
     insSpikeNone: 'no volume anomaly — yesterday within the normal 30d range',
     insLeadTxt: '{{share}}% of 7d volume',
     insRiser: 'fastest riser:',
+    aiTitle: 'ai insight · deepseek',
+    aiThinking: 'thinking',
+    aiOffline: 'ai brain offline — no api key on this server',
+    aiDisclaimer: 'ai-generated market commentary, regenerates hourly — not financial advice',
   },
 }
