@@ -165,6 +165,7 @@ export const en = {
     priceLo: 'lower price',
     priceHi: 'upper price',
     priceUnits: '{{quote}}/{{base}} · snaps to ts{{ts}}',
+    priceFlipTip: 'flip price direction — converts the typed bounds too',
     tickLower: 'tickLower',
     tickUpper: 'tickUpper',
     spacing: 'spacing {{ts}}',

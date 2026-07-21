@@ -26,10 +26,16 @@ export function RangeBar(props: {
   /** order mode: this position is a range order — out-of-range is the intended
    *  resting state, so relabel the status instead of alarming in red */
   order?: { fillFrac: number; sellSym: string; buySym: string }
+  /** controlled price orientation — lets a parent (e.g. the mint panel's PRICE
+   *  inputs) share one flip state with the bar; uncontrolled when omitted */
+  flip?: boolean
+  onFlip?: (f: boolean) => void
 }) {
   const { t } = useTranslation()
   // order mode defaults to the SELL token's price orientation ("fills as it rises")
-  const [flipped, setFlipped] = useState(props.order ? props.order.sellSym === props.sym1 : false)
+  const [flippedU, setFlippedU] = useState(props.order ? props.order.sellSym === props.sym1 : false)
+  const flipped = props.flip ?? flippedU
+  const setFlipped = (f: boolean) => (props.onFlip ? props.onFlip(f) : setFlippedU(f))
   const { tickLower, tickUpper, tick, sqrtPriceX96, dec0, dec1, sym0, sym1, order } = props
 
   // prices in token1-per-token0 orientation

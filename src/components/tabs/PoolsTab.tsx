@@ -754,6 +754,17 @@ export function AddCl({
   const [pctStr, setPctStr] = useState('10')
   const [priceLo, setPriceLo] = useState('')
   const [priceHi, setPriceHi] = useState('')
+  // price orientation shared by the PRICE inputs and the range bar's ⇄.
+  // false = token1/token0 (the pool's native quote), true = inverted.
+  const [pxFlip, setPxFlip] = useState(false)
+  const flipPx = (f: boolean) => {
+    setPxFlip(f)
+    // convert already-typed bounds: invert and swap (low↔high trade places)
+    const lo = Number(priceLo)
+    const hi = Number(priceHi)
+    setPriceLo(hi > 0 ? plainNum(1 / hi) : '')
+    setPriceHi(lo > 0 ? plainNum(1 / lo) : '')
+  }
   const [custom, setCustom] = useState<{ lower: string; upper: string }>({ lower: '', upper: '' })
   const [a0, setA0] = useState('')
   const [a1, setA1] = useState('')
@@ -787,8 +798,14 @@ export function AddCl({
       return { lower, upper }
     }
     if (mode === 'price') {
-      const lo = Number(priceLo)
-      const hi = Number(priceHi)
+      let lo = Number(priceLo)
+      let hi = Number(priceHi)
+      if (pxFlip) {
+        // inputs are in token0/token1 — convert back to the native orientation
+        const l = lo
+        lo = hi > 0 ? 1 / hi : NaN
+        hi = l > 0 ? 1 / l : NaN
+      }
       if (!(lo > 0) || !(hi > 0) || lo >= hi) return null
       const tA = priceToTick(lo, t0.decimals, t1.decimals)
       const tB = priceToTick(hi, t0.decimals, t1.decimals)
@@ -802,12 +819,14 @@ export function AddCl({
     if (Number.isFinite(lo) && Number.isFinite(hi) && lo < hi)
       return { lower: alignTick(lo, s, 'floor'), upper: alignTick(hi, s, 'ceil') }
     return null
-  }, [mode, pctStr, priceLo, priceHi, custom, pool.tick, pool.tickSpacing, t0.decimals, t1.decimals])
+  }, [mode, pctStr, priceLo, priceHi, pxFlip, custom, pool.tick, pool.tickSpacing, t0.decimals, t1.decimals])
 
   const enterPriceMode = () => {
     const base = ticks ?? symRange(pool.tick, 0.1, pool.tickSpacing)
-    setPriceLo(plainNum(tickToPrice(base.lower, t0.decimals, t1.decimals)))
-    setPriceHi(plainNum(tickToPrice(base.upper, t0.decimals, t1.decimals)))
+    const pl = tickToPrice(base.lower, t0.decimals, t1.decimals)
+    const pu = tickToPrice(base.upper, t0.decimals, t1.decimals)
+    setPriceLo(plainNum(pxFlip ? 1 / pu : pl))
+    setPriceHi(plainNum(pxFlip ? 1 / pl : pu))
     setMode('price')
   }
 
@@ -973,8 +992,15 @@ export function AddCl({
             <span className="dim">→</span>
             <NumInput value={priceHi} onChange={setPriceHi} width={130} placeholder={t('add.priceHi')} />
             <span className="dim mono-sm">
-              {t('add.priceUnits', { quote: t1.symbol, base: t0.symbol, ts: pool.tickSpacing })}
+              {t('add.priceUnits', {
+                quote: pxFlip ? t0.symbol : t1.symbol,
+                base: pxFlip ? t1.symbol : t0.symbol,
+                ts: pool.tickSpacing,
+              })}
             </span>
+            <button className="rbar-flip" title={t('add.priceFlipTip')} onClick={() => flipPx(!pxFlip)}>
+              ⇄
+            </button>
           </>
         )}
         {mode === 'ticks' && (
@@ -1000,6 +1026,8 @@ export function AddCl({
           dec1={t1.decimals}
           sym0={t0.symbol}
           sym1={t1.symbol}
+          flip={pxFlip}
+          onFlip={flipPx}
         />
       )}
       <FundSwitch fund={fund} onFund={setFund} />

@@ -166,6 +166,7 @@ export const zh: typeof en = {
     priceLo: '下界价格',
     priceHi: '上界价格',
     priceUnits: '{{quote}}/{{base}} · 对齐 ts{{ts}}',
+    priceFlipTip: '翻转价格方向 — 已输入的边界也会一并换算',
     tickLower: 'tickLower',
     tickUpper: 'tickUpper',
     spacing: '间距 {{ts}}',
