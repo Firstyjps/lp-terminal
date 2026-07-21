@@ -49,7 +49,7 @@ function tgConf(): { token: string; chat: string } | null {
 }
 export const tgEnabled = (): boolean => tgConf() !== null
 
-async function sendTg(text: string): Promise<void> {
+export async function sendTg(text: string): Promise<void> {
   const conf = tgConf()
   if (!conf) return
   try {

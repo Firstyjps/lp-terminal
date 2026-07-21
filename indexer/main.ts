@@ -8,7 +8,9 @@
 // frontend to keep using its client-side fallback until the first pass lands.
 import { log, PORT, TUNE } from './config'
 import { usingPrivateRpc } from './rpc'
+import { birdeyeCycle, birdeyeEnabled } from './birdeye'
 import { backfillV3, syncV2, tailV3 } from './catalog'
+import { dipCycle } from './dips'
 import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
 import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
@@ -92,6 +94,15 @@ async function boot(): Promise<void> {
     await gtCycle()
     reprice()
   })
+  await dipCycle().catch((e) => log('[dips] first cycle failed:', String(e).slice(0, 160)))
+  loop('dips', 600_000, dipCycle)
+  if (birdeyeEnabled()) {
+    log('[birdeye] smart-money sync on (key found)')
+    await birdeyeCycle().catch((e) => log('[birdeye] first cycle failed:', String(e).slice(0, 160)))
+    loop('birdeye', 1_800_000, birdeyeCycle)
+  } else {
+    log('[birdeye] disabled — set BIRDEYE_API_KEY in .env for smart-money PnL')
+  }
   if (watchEnabled()) {
     log(`[watch] tracking ${watchAddrs().length} wallet(s) · telegram ${tgEnabled() ? 'on' : 'off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)'}`)
     await watchCycle().catch((e) => log('[watch] first cycle failed:', String(e).slice(0, 200)))

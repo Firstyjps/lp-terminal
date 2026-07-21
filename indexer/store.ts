@@ -82,6 +82,26 @@ CREATE TABLE IF NOT EXISTS swaps (
 );
 CREATE INDEX IF NOT EXISTS idx_swaps_pool_ts ON swaps(pool, ts);
 
+-- token price history (dips.ts snapshot loop) — trusted tokens only, 7d retention
+CREATE TABLE IF NOT EXISTS token_price_snaps (
+  address TEXT NOT NULL,
+  ts      INTEGER NOT NULL,
+  price   REAL NOT NULL,
+  PRIMARY KEY (address, ts)
+);
+
+-- Birdeye gainers leaderboard cache (birdeye.ts) — smart-money annotation
+CREATE TABLE IF NOT EXISTS wallet_pnl (
+  address     TEXT NOT NULL,
+  win         TEXT NOT NULL,             -- 'today' | '1W'
+  rank        INTEGER NOT NULL,
+  pnl         REAL,
+  volume      REAL,
+  trade_count INTEGER,
+  updated     INTEGER NOT NULL,
+  PRIMARY KEY (address, win)
+);
+
 -- position watcher (WATCH_ADDRESSES): last-known CL position state per NFT
 CREATE TABLE IF NOT EXISTS watch_positions (
   owner          TEXT NOT NULL,             -- lowercase wallet
@@ -407,6 +427,65 @@ export const setSwapTrader = (pool: string, txHash: string, trader: string) =>
 
 export const pruneSwaps = (beforeTs: number): number =>
   Number(db.prepare('DELETE FROM swaps WHERE ts < ?').run(beforeTs).changes)
+
+// ---- token price snaps (dip detector) ----
+const snapPricesQ = db.prepare(`
+  INSERT OR IGNORE INTO token_price_snaps (address, ts, price)
+  SELECT address, ?, price_usd FROM tokens WHERE price_usd > 0 AND price_trust_usd >= ?`)
+export const snapshotPrices = (ts: number, minTrust: number): number =>
+  Number(snapPricesQ.run(ts, minTrust).changes)
+
+const priceAtQ = db.prepare(`
+  SELECT price FROM token_price_snaps WHERE address = ? AND ts BETWEEN ? AND ?
+  ORDER BY ABS(ts - ?) LIMIT 1`)
+/** closest stored price to targetTs within ±tolSecs, else null */
+export const priceAt = (addr: string, targetTs: number, tolSecs: number): number | null =>
+  (priceAtQ.get(addr.toLowerCase(), targetTs - tolSecs, targetTs + tolSecs, targetTs) as { price: number } | undefined)
+    ?.price ?? null
+
+export const prunePriceSnaps = (beforeTs: number): number =>
+  Number(db.prepare('DELETE FROM token_price_snaps WHERE ts < ?').run(beforeTs).changes)
+
+export const trustedTokens = (minTrust: number) =>
+  db
+    .prepare('SELECT address, symbol, price_usd, price_trust_usd FROM tokens WHERE price_usd > 0 AND price_trust_usd >= ?')
+    .all(minTrust) as { address: string; symbol: string; price_usd: number; price_trust_usd: number }[]
+
+/** deepest non-sus pool holding this token (dip context + liquidity floor) */
+const bestPoolQ = db.prepare(`
+  SELECT p.address, s.tvl_usd FROM pools p JOIN pool_state s ON s.address = p.address
+  WHERE (p.token0 = ? OR p.token1 = ?) AND s.tvl_sus = 0 AND s.tvl_usd IS NOT NULL
+  ORDER BY s.tvl_usd DESC LIMIT 1`)
+export const bestPoolOf = (token: string): { address: string; tvl_usd: number } | undefined => {
+  const a = token.toLowerCase()
+  return bestPoolQ.get(a, a) as { address: string; tvl_usd: number } | undefined
+}
+
+// ---- wallet pnl (Birdeye leaderboard cache) ----
+export type WalletPnlRow = {
+  address: string
+  win: string
+  rank: number
+  pnl: number | null
+  volume: number | null
+  trade_count: number | null
+  updated: number
+}
+const upPnlQ = db.prepare(`
+  INSERT INTO wallet_pnl (address, win, rank, pnl, volume, trade_count, updated) VALUES (?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(address, win) DO UPDATE SET rank = excluded.rank, pnl = excluded.pnl,
+    volume = excluded.volume, trade_count = excluded.trade_count, updated = excluded.updated`)
+export const upsertWalletPnl = (r: Omit<WalletPnlRow, 'updated'>, updated: number) =>
+  void upPnlQ.run(r.address.toLowerCase(), r.win, r.rank, r.pnl, r.volume, r.trade_count, updated)
+export const clearWalletPnl = (win: string) => void db.prepare('DELETE FROM wallet_pnl WHERE win = ?').run(win)
+export const walletPnlRows = (addrs: string[]): WalletPnlRow[] =>
+  addrs.length
+    ? (db
+        .prepare(`SELECT * FROM wallet_pnl WHERE address IN (${addrs.map(() => '?').join(',')})`)
+        .all(...addrs.map((a) => a.toLowerCase())) as WalletPnlRow[])
+    : []
+export const allWalletPnl = () =>
+  db.prepare('SELECT * FROM wallet_pnl ORDER BY win, rank').all() as WalletPnlRow[]
 
 export const tx = (fn: () => void) => {
   db.exec('BEGIN')

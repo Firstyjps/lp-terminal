@@ -23,6 +23,8 @@ export function VolPanel(props: { pool: string; kind: 'cl' | 'v2' | 'v2s' }) {
   const usd = d?.meta?.usd ?? false
   const quote = d?.meta?.quote ?? ''
   const money = (v: number) => (usd ? '$' + fmtCompact(v) : `${fmtCompact(v)} ${quote}`)
+  // smart-money column appears only when the indexer has a Birdeye key
+  const hasPnl = (d?.topTraders ?? []).some((w) => w.pnl)
 
   return (
     <div className="vol-panel">
@@ -81,6 +83,7 @@ export function VolPanel(props: { pool: string; kind: 'cl' | 'v2' | 'v2s' }) {
                     <th className="num">{t('vol.thBuy')}</th>
                     <th className="num">{t('vol.thSell')}</th>
                     <th className="num">{t('vol.thShare')}</th>
+                    {hasPnl && <th className="num">{t('vol.thPnl')}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -101,6 +104,18 @@ export function VolPanel(props: { pool: string; kind: 'cl' | 'v2' | 'v2s' }) {
                       <td className="num green">{money(w.buy)}</td>
                       <td className="num red">{money(w.sell)}</td>
                       <td className="num">{fmtPct(w.share * 100, 1)}</td>
+                      {hasPnl && (
+                        <td className="num" title={w.pnl ? t('vol.pnlTip', { rank: w.pnl.rank, win: w.pnl.win }) : undefined}>
+                          {w.pnl ? (
+                            <span className={(w.pnl.pnl ?? 0) >= 0 ? 'green' : 'red'}>
+                              {w.pnl.pnl != null ? (w.pnl.pnl >= 0 ? '+$' : '−$') + fmtCompact(Math.abs(w.pnl.pnl)) : `#${w.pnl.rank}`}
+                              {' ★'}
+                            </span>
+                          ) : (
+                            <span className="dim">—</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

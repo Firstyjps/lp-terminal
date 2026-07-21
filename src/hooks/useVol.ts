@@ -19,6 +19,8 @@ export type VolTrader = {
   n: number
   share: number
   churn: number
+  /** Birdeye leaderboard membership — present only when the indexer has a key */
+  pnl?: { win: string; rank: number; pnl: number | null }
 }
 export type VolTrade = { ts: number; side: 'buy' | 'sell'; v: number; price: number | null; trader: string | null; tx: string }
 export type VolData = {

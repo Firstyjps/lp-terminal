@@ -1,9 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAiInsight, useChainTvl, useDexOverview, useFeesOverview, useStables } from '../../hooks/useChainAnalytics'
+import { useAiInsight, useChainTvl, useDexOverview, useDips, useFeesOverview, useStables } from '../../hooks/useChainAnalytics'
 import { currentLang } from '../../i18n'
 import type { SeriesPoint } from '../../lib/llama'
-import { fmtCompact, fmtUsd } from '../../lib/format'
+import { fmtCompact, fmtNum, fmtUsd } from '../../lib/format'
 
 type Range = 30 | 90 | 0 // days shown in the charts; 0 = full history
 type ProtoSort = 'vol24' | 'vol7' | 'fees24' | 'fees7'
@@ -149,6 +149,7 @@ export function AnalyzeTab() {
   const fees = useFeesOverview()
   const stables = useStables()
   const ai = useAiInsight()
+  const dips = useDips()
   const [range, setRange] = useState<Range>(30)
   const [sort, setSort] = useState<ProtoSort>('vol24')
   // collapsed states persist like the watchlist / theme prefs
@@ -423,6 +424,46 @@ export function AnalyzeTab() {
         <TermChart label={t('an.chVol')} points={clip(dex.data?.totalDataChart ?? [])} kind="bars" />
         <TermChart label={t('an.chFees')} points={clip(fees.data?.totalDataChart ?? [])} kind="bars" />
       </div>
+      {dips.data && dips.data.dips.length > 0 && (
+        <>
+          <div className="section-title">{t('an.dips', { n: dips.data.dips.length })}</div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>{t('an.thDipToken')}</th>
+                  <th className="num">{t('an.thDipPrice')}</th>
+                  <th className="num">1H</th>
+                  <th className="num">24H</th>
+                  <th className="num">{t('an.thDipLiq')}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {dips.data.dips.map((d) => (
+                  <tr key={d.token} className="rowhover">
+                    <td>
+                      <b>{d.symbol}</b> <span className="dim mono-sm">{d.token.slice(0, 6)}…{d.token.slice(-4)}</span>
+                    </td>
+                    <td className="num mono-sm">${fmtNum(d.price, 4)}</td>
+                    <td className="num red">{d.drop1h != null ? `−${(d.drop1h * 100).toFixed(0)}%` : '—'}</td>
+                    <td className="num red">{d.drop24h != null ? `−${(d.drop24h * 100).toFixed(0)}%` : '—'}</td>
+                    <td className="num">{fmtUsdC(d.poolTvl)}</td>
+                    <td className="num">
+                      <a href={`https://gmgn.ai/robinhood/token/${d.token}`} target="_blank" rel="noreferrer" className="dim">
+                        gmgn ↗
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="dim mono-sm" style={{ margin: '4px 0 10px' }}>
+            {t('an.dipsNote')}
+          </div>
+        </>
+      )}
       <div className="section-title">{t('an.protocols', { n: protoRows.length })}</div>
       <div className="tbl-wrap">
         <table className="tbl">

@@ -20,6 +20,31 @@ export const useAiInsight = () =>
     },
   })
 
+export type Dip = {
+  token: string
+  symbol: string
+  price: number
+  drop1h: number | null
+  drop24h: number | null
+  pool: string
+  poolTvl: number
+}
+export type DipsData = { asof: number; dips: Dip[] }
+
+/** indexer dip detector — trusted tokens that just dumped (10-min scan) */
+export const useDips = () =>
+  useQuery({
+    queryKey: ['dips'],
+    refetchInterval: 300_000,
+    staleTime: 270_000,
+    retry: 1,
+    queryFn: async (): Promise<DipsData> => {
+      const r = await fetch('/api/dips', { headers: { accept: 'application/json' } })
+      if (!r.ok) throw new Error(`dips ${r.status}`)
+      return r.json()
+    },
+  })
+
 export const useChainTvl = () => useQuery({ queryKey: ['llamaTvl'], queryFn: fetchChainTvl, ...opts })
 export const useDexOverview = () => useQuery({ queryKey: ['llamaDex'], queryFn: fetchDexOverview, ...opts })
 export const useFeesOverview = () => useQuery({ queryKey: ['llamaFees'], queryFn: fetchFeesOverview, ...opts })

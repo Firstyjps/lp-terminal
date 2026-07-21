@@ -5,6 +5,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { aiEnabled, aiInsight } from './ai'
 import { PORT, log, now } from './config'
+import { smartMoney } from './birdeye'
+import { dipsLatest } from './dips'
 import { db, kvGet, poolCounts, snapsFor, watchPosByOwner } from './store'
 import { VOL_HOURS, ensureVol, readVol } from './vol'
 import { tgEnabled, watchAddrs, watchEnabled } from './watch'
@@ -220,6 +222,12 @@ export function startApi(): void {
       } else if (url.pathname === '/api/vol') {
         body = getVol(url.searchParams)
         cache = 'no-store'
+      } else if (url.pathname === '/api/dips') {
+        body = dipsLatest() // asof = last scan time (10-min cycle)
+        cache = 'public, max-age=60'
+      } else if (url.pathname === '/api/smartmoney') {
+        body = smartMoney()
+        cache = 'public, max-age=300'
       }
       else if (url.pathname === '/api/health') {
         body = getHealth()

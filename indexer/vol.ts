@@ -30,6 +30,7 @@ import {
   tokenRows,
   tx,
   upsertTokenMeta,
+  walletPnlRows,
   type SwapRow,
 } from './store'
 
@@ -675,6 +676,14 @@ export function readVol(pool: string, hours: number): Record<string, unknown> {
       churn: Math.max(w.buy, w.sell) > 0 ? Math.min(w.buy, w.sell) / Math.max(w.buy, w.sell) : 0,
     }))
     .sort((a, b) => b.total - a.total)
+  // smart-money annotation — Birdeye leaderboard membership (empty w/o key)
+  const pnlRows = walletPnlRows(ranked.slice(0, 10).map((w) => w.addr))
+  const pnlOf = (a: string) => {
+    const rows = pnlRows.filter((r) => r.address === a)
+    const r = rows.find((x) => x.win === 'today') ?? rows[0]
+    return r ? { win: r.win, rank: r.rank, pnl: r.pnl } : undefined
+  }
+
   const top5Share = ranked.slice(0, 5).reduce((s, w) => s + w.share, 0)
   const churnShare = ranked.filter((w) => w.churn > 0.7 && w.total > total * 0.01).reduce((s, w) => s + w.share, 0)
   const swapsN = rows.filter((r) => r.ts >= from).length
@@ -709,7 +718,7 @@ export function readVol(pool: string, hours: number): Record<string, unknown> {
       washy: top5Share > 0.6 || churnShare > 0.4,
     },
     buckets: outBuckets,
-    topTraders: ranked.slice(0, 10),
+    topTraders: ranked.slice(0, 10).map((w) => ({ ...w, pnl: pnlOf(w.addr) })),
     bigTrades: big.slice(0, 10),
   }
 }
