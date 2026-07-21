@@ -398,10 +398,31 @@ async function watchOne(owner: string, alerts: string[]): Promise<{ n: number; i
     }
     if (inRange === 1) outSince = null
 
-    // collected fees show up as a drop in uncollected value
-    if (prev?.fees_usd != null && feesUsd !== null && feesUsd < prev.fees_usd - 0.5) {
-      collected += prev.fees_usd - feesUsd
-      alertedFee = 0
+    // collections/claims = RAW uncollected amounts going down. USD comparisons
+    // would ratchet phantom "collections" out of price swings, and a cycle that
+    // lands between decreaseLiquidity and collect sees principal inside
+    // tokensOwed — so skip accounting on any cycle where liquidity dropped and
+    // rebaseline instead (conservative: may undercount, never overcounts).
+    if (prev && prev.closed === 0) {
+      const liqDropped = p.liquidity < BigInt(prev.liquidity)
+      if (!liqDropped) {
+        let got = 0
+        if (prev.staked === 0 && !p.staked) {
+          const d0 = prev.fees0 !== null ? BigInt(prev.fees0) - p.fees0 : 0n
+          const d1 = prev.fees1 !== null ? BigInt(prev.fees1) - p.fees1 : 0n
+          if (d0 > 0n) got += usdOf(px, p.token0, d0) ?? 0
+          if (d1 > 0n) got += usdOf(px, p.token1, d1) ?? 0
+        }
+        if (prev.staked === 1) {
+          // gauge withdraw auto-claims, so count UP drops even across unstake
+          const dUp = prev.earned_up !== null ? BigInt(prev.earned_up) - p.earnedUp : 0n
+          if (dUp > 0n && upPx !== undefined) got += (Number(dUp) / 1e18) * upPx
+        }
+        if (got > 0) {
+          collected += got
+          alertedFee = 0
+        }
+      }
     }
     if (feesUsd !== null && feesUsd >= threshold && alertedFee === 0) {
       alertedFee = 1
@@ -416,6 +437,7 @@ async function watchOne(owner: string, alerts: string[]): Promise<{ n: number; i
       collected_usd: collected, first_ts: prev?.first_ts ?? ts,
       first_value_usd: prev?.first_value_usd ?? valueUsd, last_ts: ts, closed: 0,
       out_since: outSince, alerted_fee: alertedFee,
+      fees0: String(p.fees0), fees1: String(p.fees1), earned_up: String(p.earnedUp),
     })
 
     const due = ts - lastSnapTs(owner, p.npm, String(p.id)) >= TUNE.watchSnapMs / 1000 - 5

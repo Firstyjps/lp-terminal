@@ -113,6 +113,11 @@ for (const mig of [
   'ALTER TABLE tokens ADD COLUMN price_trust_usd REAL NOT NULL DEFAULT 0',
   // 1 = claimed TVL is not backed by trusted pricing (see state.ts reprice)
   'ALTER TABLE pool_state ADD COLUMN tvl_sus INTEGER NOT NULL DEFAULT 0',
+  // raw uncollected amounts — collection detection compares these (exact),
+  // never USD values (price swings would ratchet phantom "collections")
+  'ALTER TABLE watch_positions ADD COLUMN fees0 TEXT',
+  'ALTER TABLE watch_positions ADD COLUMN fees1 TEXT',
+  'ALTER TABLE watch_positions ADD COLUMN earned_up TEXT',
 ]) {
   try {
     db.exec(mig)
@@ -291,25 +296,30 @@ export type WatchPosRow = {
   closed: number
   out_since: number | null
   alerted_fee: number
+  fees0: string | null
+  fees1: string | null
+  earned_up: string | null
 }
 
 const upWatchQ = db.prepare(`
   INSERT INTO watch_positions (owner, npm, token_id, pool, token0, token1, tick_lower, tick_upper,
     staked, liquidity, in_range, value_usd, fees_usd, collected_usd, first_ts, first_value_usd, last_ts,
-    closed, out_since, alerted_fee)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    closed, out_since, alerted_fee, fees0, fees1, earned_up)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(owner, npm, token_id) DO UPDATE SET pool = excluded.pool,
     token0 = excluded.token0, token1 = excluded.token1,
     tick_lower = excluded.tick_lower, tick_upper = excluded.tick_upper,
     staked = excluded.staked, liquidity = excluded.liquidity, in_range = excluded.in_range,
     value_usd = excluded.value_usd, fees_usd = excluded.fees_usd, collected_usd = excluded.collected_usd,
     last_ts = excluded.last_ts, closed = excluded.closed, out_since = excluded.out_since,
-    alerted_fee = excluded.alerted_fee`)
+    alerted_fee = excluded.alerted_fee, fees0 = excluded.fees0, fees1 = excluded.fees1,
+    earned_up = excluded.earned_up`)
 export const upsertWatchPos = (r: WatchPosRow) =>
   void upWatchQ.run(
     r.owner, r.npm, r.token_id, r.pool, r.token0, r.token1, r.tick_lower, r.tick_upper,
     r.staked, r.liquidity, r.in_range, r.value_usd, r.fees_usd, r.collected_usd,
     r.first_ts, r.first_value_usd, r.last_ts, r.closed, r.out_since, r.alerted_fee,
+    r.fees0, r.fees1, r.earned_up,
   )
 
 const watchByOwnerQ = db.prepare('SELECT * FROM watch_positions WHERE owner = ?')
