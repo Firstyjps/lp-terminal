@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { useAccount } from 'wagmi'
 import { readContract, writeContract } from 'wagmi/actions'
 import { parseUnits } from 'viem'
-import { clGaugeAbi, clPmAbi, v2GaugeAbi, v2PoolAbi, v2RouterAbi } from '../../abi'
+import { clGaugeAbi, clPmAbi, clPoolAbi, uniV3PoolAbi, v2GaugeAbi, v2PoolAbi, v2RouterAbi } from '../../abi'
 import { ADDR, CHAIN_ID, EXPLORER, UNI } from '../../config/addresses'
 import { wagmiConfig } from '../../config/wagmi'
 import {
+  MAX_TICK,
   MAX_UINT128,
+  MIN_TICK,
   applySlippage,
   getAmountsForLiquidity,
   getLiquidityForAmounts,
@@ -20,11 +22,13 @@ import { fmtAmount, fmtNum, fmtUsd, shortAddr } from '../../lib/format'
 import { limitFillFrac, limitSideFor, limitTagOf, untagLimit } from '../../lib/limit'
 import { clPosMetrics, v2PosMetrics, type Earning } from '../../lib/posmetrics'
 import type { PoolStat } from '../../lib/poolstats'
-import { deadline, ensureAllowance, fetchSqrtPriceX96, offerSwapClaimedUp, step } from '../../lib/tx'
+import { deadline, ensureAllowance, fetchSqrtPriceX96, offerSwapClaimedUp, receivedOf, step } from '../../lib/tx'
 import { txlog } from '../../lib/txlog'
+import { executeZap, planZap, type ZapTarget } from '../../lib/zap'
 import { tokenOf, usePools } from '../../hooks/usePools'
 import { useBalances } from '../../hooks/useBalances'
 import { usePositions } from '../../hooks/usePositions'
+import { useWatch, type WatchRow } from '../../hooks/useWatch'
 import { usePoolStats } from '../../hooks/usePoolStats'
 import { useUniPoolStats } from '../../hooks/useUniPoolStats'
 import { useUpPrice } from '../../hooks/useUpPrice'
@@ -47,6 +51,7 @@ export function PositionsTab() {
   const positions = usePositions(user)
   const stats = usePoolStats() // up33 pool 24h stats + the WETH/USD anchor
   const upPrice = useUpPrice()
+  const watch = useWatch(user) // indexer-side tracking (PnL history + alerts)
   const [claimBusy, setClaimBusy] = useState(false)
 
   // indexer stats for the specific uniswap pools the user is LPing
@@ -301,6 +306,21 @@ export function PositionsTab() {
             }
           />
         )}
+        {watch.data?.watched && watch.data.rows.length > 0 && (
+          <Stat
+            k={t('pos.trackedPnl')}
+            v={(() => {
+              // closed rows keep contributing what they earned while tracked
+              const earned = watch.data.rows.reduce((a, r) => a + r.collectedUsd + (r.closed ? 0 : (r.feesUsd ?? 0)), 0)
+              return <span className={earned > 0 ? 'green' : ''}>{t('pos.trackedEarned', { usd: fmtUsd(earned) })}</span>
+            })()}
+            sub={t('pos.trackedSub', {
+              n: watch.data.rows.filter((r) => !r.closed).length,
+              date: new Date(Math.min(...watch.data.rows.map((r) => r.firstTs)) * 1000).toISOString().slice(0, 10),
+              tg: watch.data.telegram ? 'ON' : 'OFF',
+            })}
+          />
+        )}
       </div>
 
       <div className="section-title">{t('pos.sectionCl', { n: data.cl.length })}</div>
@@ -321,6 +341,7 @@ export function PositionsTab() {
           stat={statOf(p.pool)}
           upUsd={upUsd}
           wethUsd={wethUsd}
+          watchRow={watch.data?.byKey.get(`${p.pool.protocol === 'univ3' ? 'univ3' : 'up33'}|${p.tokenId}`)}
         />
       ))}
       <div className="section-title">{t('pos.sectionV2', { n: data.v2.length })}</div>
@@ -355,6 +376,7 @@ export function ClCard({
   stat,
   upUsd,
   wethUsd,
+  watchRow,
 }: {
   pos: ClPosition
   data: PoolsData
@@ -364,12 +386,13 @@ export function ClCard({
   stat?: PoolStat
   upUsd?: number
   wethUsd?: number | null
+  watchRow?: WatchRow
 }) {
   const { t } = useTranslation()
   const t0 = xtokens[pos.pool.token0.toLowerCase()] ?? tokenOf(data, pos.pool.token0)
   const t1 = xtokens[pos.pool.token1.toLowerCase()] ?? tokenOf(data, pos.pool.token1)
   const [busy, setBusy] = useState(false)
-  const [panel, setPanel] = useState<null | 'inc' | 'dec'>(null)
+  const [panel, setPanel] = useState<null | 'inc' | 'dec' | 'rr'>(null)
   const [armed, setArmed] = useState(false)
 
   // all NPM write entrypoints are signature-identical across protocols —
@@ -549,6 +572,8 @@ export function ClCard({
 
   const gaugeOk = !!pos.pool.gauge && pos.pool.gaugeAlive
   const hasFees = pos.fees0 > 0n || pos.fees1 > 0n
+  // out-of-range non-order positions earn nothing — offer the re-range flow
+  const offBand = pos.liquidity > 0n && !limitTag && (curTick < pos.tickLower || curTick >= pos.tickUpper)
 
   return (
     <div className="card">
@@ -571,6 +596,11 @@ export function ClCard({
         {pos.staked ? <Badge tone="green">{t('pos.staked')}</Badge> : <Badge tone="amber">{t('pos.wallet')}</Badge>}
         {limitTag && <Badge tone="cyan">{t('pos.limitBadge', { sell: limitTag.sellSym, buy: limitTag.buySym })}</Badge>}
         <div className="card-actions">
+          {offBand && (
+            <Btn busy={busy} onClick={() => setPanel(panel === 'rr' ? null : 'rr')} title={t('pos.rerangeTip')}>
+              {t('pos.rerange')}
+            </Btn>
+          )}
           {pos.staked ? (
             <>
               <Btn busy={busy} onClick={claim} disabled={pos.earned === 0n} title={t('pos.claimUpTip')}>
@@ -695,7 +725,46 @@ export function ClCard({
             <span className="k">{t('pos.earning')}</span>
             <EarnLine e={m.earning} />
           </span>
+          {watchRow && (
+            <span>
+              <span className="k">{t('pos.pnlK')}</span>
+              {(() => {
+                const earned = watchRow.collectedUsd + (watchRow.feesUsd ?? 0)
+                const dv =
+                  m.valueUsd !== null && watchRow.firstValueUsd !== null ? m.valueUsd - watchRow.firstValueUsd : null
+                return (
+                  <>
+                    <span className={earned > 0.005 ? 'green' : 'dim'}>
+                      {t('pos.pnlEarned', { usd: fmtUsd(earned) })}
+                    </span>
+                    {dv !== null && Math.abs(dv) >= 0.01 && (
+                      <span className={dv >= 0 ? 'green' : 'red'}>
+                        {' '}· Δ {dv >= 0 ? '+' : '−'}{fmtUsd(Math.abs(dv))}
+                      </span>
+                    )}
+                    <span className="dim">
+                      {' '}{t('pos.pnlSince', { date: new Date(watchRow.firstTs * 1000).toISOString().slice(5, 10) })}
+                    </span>
+                  </>
+                )
+              })()}
+            </span>
+          )}
         </div>
+      )}
+
+      {panel === 'rr' && offBand && (
+        <RerangePanel
+          pos={pos}
+          npm={npm}
+          t0={t0}
+          t1={t1}
+          user={user}
+          busy={busy}
+          run={run}
+          curTick={curTick}
+          onDone={() => setPanel(null)}
+        />
       )}
 
       {panel === 'inc' && !pos.staked && (
@@ -728,6 +797,203 @@ export function ClCard({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * RE-RANGE: close an out-of-range position and re-mint it centered on the
+ * current price, funded by whatever the withdrawal returned (a single token
+ * when fully out of range — the zap planner swaps ≈half via the gated Kyber
+ * path). Every tx is wallet-signed individually; a halt at any step leaves all
+ * value as plain wallet balances, never stranded.
+ */
+export function RerangePanel(props: {
+  pos: ClPosition
+  npm: Address
+  t0: TokenInfo
+  t1: TokenInfo
+  user: `0x${string}`
+  busy: boolean
+  run: (fn: () => Promise<unknown>) => Promise<void>
+  curTick: number
+  onDone: () => void
+}) {
+  const { pos, t0, t1 } = props
+  const { t } = useTranslation()
+  const [mult, setMult] = useState<0.5 | 1 | 2>(1)
+  const [armed, setArmed] = useState(false)
+
+  const spacing = pos.pool.tickSpacing
+  const baseWidth = pos.tickUpper - pos.tickLower
+
+  /** band of width ≈ baseWidth·m centered on tick, snapped to spacing, tick strictly inside */
+  const bandFor = (tick: number, m: number): { lower: number; upper: number } => {
+    const width = Math.max(spacing, Math.round((baseWidth * m) / spacing) * spacing)
+    let lower = Math.floor((tick - width / 2) / spacing) * spacing
+    let upper = lower + width
+    while (upper <= tick) {
+      lower += spacing
+      upper += spacing
+    }
+    const minU = Math.ceil(MIN_TICK / spacing) * spacing
+    const maxU = Math.floor(MAX_TICK / spacing) * spacing
+    return { lower: Math.max(lower, minU), upper: Math.min(upper, maxU) }
+  }
+
+  const prev = bandFor(props.curTick, mult)
+  const px = (tk: number) => 1.0001 ** tk * 10 ** (t0.decimals - t1.decimals)
+  const fp = (n: number) =>
+    n >= 1000 ? Math.round(n).toLocaleString('en-US') : n >= 1 ? n.toPrecision(5) : n.toExponential(3)
+  const halfPct = (1.0001 ** ((prev.upper - prev.lower) / 2) - 1) * 100
+
+  const doIt = () =>
+    props.run(async () => {
+      const pool = pos.pool
+      // 1) staked NFTs go back to the wallet first (withdraw auto-claims UP)
+      if (pos.staked) {
+        const h = await step(
+          t('pos.stUnstake', { id: pos.tokenId.toString() }),
+          () =>
+            writeContract(wagmiConfig, {
+              abi: clGaugeAbi,
+              address: pool.gauge!,
+              functionName: 'withdraw',
+              args: [pos.tokenId],
+              chainId: CHAIN_ID,
+            }),
+          { onSuccess: offerSwapClaimedUp(props.user) },
+        )
+        if (!h) return
+      }
+      // 2) close: decrease 100% then collect everything (fees compound into the new band)
+      const sqrtPNow = await fetchSqrtPriceX96(pool.address)
+      const mins = minAmountsForLiquidity(
+        sqrtPNow,
+        getSqrtRatioAtTick(pos.tickLower),
+        getSqrtRatioAtTick(pos.tickUpper),
+        pos.liquidity,
+        SLIP_BPS,
+      )
+      const h1 = await step(t('pos.stDecrease', { id: pos.tokenId.toString(), pct: 100 }), () =>
+        writeContract(wagmiConfig, {
+          abi: clPmAbi,
+          address: props.npm,
+          functionName: 'decreaseLiquidity',
+          args: [
+            {
+              tokenId: pos.tokenId,
+              liquidity: pos.liquidity,
+              amount0Min: mins.amount0Min,
+              amount1Min: mins.amount1Min,
+              deadline: deadline(),
+            },
+          ],
+          chainId: CHAIN_ID,
+        }),
+      )
+      if (!h1) return
+      let got0 = 0n
+      let got1 = 0n
+      const h2 = await step(
+        t('pos.stCollectAll', { id: pos.tokenId.toString() }),
+        () =>
+          writeContract(wagmiConfig, {
+            abi: clPmAbi,
+            address: props.npm,
+            functionName: 'collect',
+            args: [{ tokenId: pos.tokenId, recipient: props.user, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 }],
+            chainId: CHAIN_ID,
+          }),
+        {
+          onSuccess: (r) => {
+            got0 = receivedOf(r, pool.token0, props.user)
+            got1 = receivedOf(r, pool.token1, props.user)
+          },
+        },
+      )
+      if (!h2) return
+      if (got0 === 0n && got1 === 0n) {
+        txlog.push('err', t('pos.rrNothing'))
+        return
+      }
+      // 3) fresh price → final band around it (the preview band may have drifted)
+      const s0 = await readContract(wagmiConfig, {
+        abi: pool.protocol === 'univ3' ? uniV3PoolAbi : clPoolAbi,
+        address: pool.address,
+        functionName: 'slot0',
+        chainId: CHAIN_ID,
+      })
+      const freshSqrt = s0[0] as bigint
+      const freshTick = Number(s0[1])
+      const { lower, upper } = bandFor(freshTick, mult)
+      // 4) fund the mint with the bigger side; the smaller stays as wallet dust
+      const p1per0 = (Number(freshSqrt) / 2 ** 96) ** 2
+      const inIs0 = Number(got0) * p1per0 >= Number(got1)
+      const amountIn = inIs0 ? got0 : got1
+      const target: ZapTarget = {
+        kind: 'cl-mint',
+        pool: { ...pool, sqrtPriceX96: freshSqrt, tick: freshTick },
+        tickLower: lower,
+        tickUpper: upper,
+      }
+      try {
+        const plan = await planZap({ target, tokenIn: inIs0 ? pool.token0 : pool.token1, amountIn })
+        const res = await executeZap({ plan, target, user: props.user, slipBps: SLIP_BPS, t0, t1 })
+        if (!res.ok) return
+      } catch (e) {
+        txlog.push('err', t('pos.rrPlanFailed', { err: (e as Error).message }))
+        return
+      }
+      const dust = inIs0 ? got1 : got0
+      if (dust > 0n)
+        txlog.push(
+          'info',
+          t('pos.rrDust', {
+            amt: fmtAmount(dust, inIs0 ? t1.decimals : t0.decimals),
+            sym: inIs0 ? t1.symbol : t0.symbol,
+          }),
+        )
+      props.onDone()
+    })
+
+  const goClick = () => {
+    if (!armed) {
+      setArmed(true)
+      setTimeout(() => setArmed(false), 4000)
+      return
+    }
+    setArmed(false)
+    void doIt()
+  }
+
+  return (
+    <div className="expander">
+      <div className="form-row">
+        <span className="lbl">{t('pos.rrWidth')}</span>
+        {([0.5, 1, 2] as const).map((m) => (
+          <Btn key={m} busy={props.busy} tone={mult === m ? 'default' : 'ghost'} onClick={() => setMult(m)}>
+            {m === 1 ? t('pos.rrSame') : m === 0.5 ? t('pos.rrTight') : t('pos.rrWide')}
+          </Btn>
+        ))}
+        <span className="dim mono-sm">
+          {t('pos.rrPreview', {
+            lo: fp(px(prev.lower)),
+            hi: fp(px(prev.upper)),
+            sym1: t1.symbol,
+            sym0: t0.symbol,
+            pct: halfPct.toFixed(1),
+          })}
+        </span>
+      </div>
+      <div className="form-row">
+        <Btn busy={props.busy} tone="danger" onClick={goClick}>
+          {armed ? t('pos.rrConfirm') : t('pos.rrGo')}
+        </Btn>
+        <span className="dim mono-sm">
+          {(pos.staked ? t('pos.rrStepUnstake') : '') + t('pos.rrSteps')}
+        </span>
+      </div>
     </div>
   )
 }

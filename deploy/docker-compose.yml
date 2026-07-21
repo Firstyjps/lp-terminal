@@ -33,6 +33,12 @@ services:
       RPC: ${RPC}
       # /api/ai-insight narrative (optional — endpoint 503s without it)
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # position watcher + telegram alerts (all optional — watcher off without
+      # WATCH_ADDRESSES, alerts off without the telegram pair)
+      WATCH_ADDRESSES: ${WATCH_ADDRESSES:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      FEE_ALERT_USD: ${FEE_ALERT_USD:-}
     volumes:
       - ..:/app
     networks:
