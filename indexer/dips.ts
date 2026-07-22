@@ -7,6 +7,7 @@
 // Cycle (10 min): snapshot prices → scan for dumps → alert Telegram (12h
 // cooldown per token) → prune old snaps. Results served at /api/dips.
 import { log, now } from './config'
+import { ensureSecurity, isUnsafe, securityOf } from './gmgn'
 import {
   bestPoolOf,
   kvGet,
@@ -107,7 +108,15 @@ async function alert(dips: Dip[]): Promise<void> {
 export async function dipCycle(): Promise<void> {
   const t = now()
   snapshotPrices(t, TUNE.snapMinTrust)
-  const dips = scan()
+  let dips = scan()
+  // GMGN security gate — a real-liquidity contract trap dumping hard is bait,
+  // not a dip. Unknown verdict (no key / api miss) never drops anything.
+  if (dips.length) {
+    await ensureSecurity(dips.map((d) => d.token))
+    const dropped = dips.filter((d) => isUnsafe(securityOf(d.token)))
+    if (dropped.length) log(`[dips] dropped unsafe: ${dropped.map((d) => d.symbol).join(' ')}`)
+    dips = dips.filter((d) => !isUnsafe(securityOf(d.token)))
+  }
   latest = { asof: t, dips }
   kvSet('dips_latest', JSON.stringify(latest))
   prunePriceSnaps(t - TUNE.keepDays * 86_400)

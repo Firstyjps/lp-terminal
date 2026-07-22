@@ -39,6 +39,10 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       FEE_ALERT_USD: ${FEE_ALERT_USD:-}
+      # smart-money leaderboard (optional — module dormant without it)
+      BIRDEYE_API_KEY: ${BIRDEYE_API_KEY:-}
+      # GMGN token security gate (optional — checks skipped without it)
+      GMGN_API_KEY: ${GMGN_API_KEY:-}
     volumes:
       - ..:/app
     networks:

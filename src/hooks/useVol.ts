@@ -32,6 +32,17 @@ export type VolData = {
   error?: string
   asof: number
   meta?: { kind: string; base: string; quote: string; usd: boolean; quoteUsd: number | null }
+  /** GMGN verdict on the base token — absent until fetched / without a key */
+  security?: {
+    honeypot: boolean
+    alert: boolean
+    sellTax: number | null
+    buyTax: number | null
+    openSource: boolean
+    renounced: boolean
+    top10Rate: number | null
+    known: boolean
+  }
   coverage?: { fromTs: number; toTs: number; complete: boolean }
   totals?: {
     buy: number

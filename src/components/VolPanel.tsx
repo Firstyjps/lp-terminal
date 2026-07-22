@@ -43,6 +43,26 @@ export function VolPanel(props: { pool: string; kind: 'cl' | 'v2' | 'v2s' }) {
         {d?.status === 'error' && <span className="red mono-sm">{t('vol.failed', { err: d.error ?? '?' })}</span>}
         {vol.isError && <span className="red mono-sm">{t('vol.failed', { err: String(vol.error).slice(0, 60) })}</span>}
         {d?.partial && <span className="dim mono-sm">{t('vol.partial')}</span>}
+        {d?.security?.known && (
+          <span className="mono-sm" style={{ marginLeft: 'auto' }}>
+            {d.security.honeypot || d.security.alert || (d.security.sellTax ?? 0) >= 50 ? (
+              <span className="red" title={t('vol.secUnsafeTip')}>
+                ☠ {d.security.honeypot ? t('vol.secHoneypot') : t('vol.secUnsafe')}
+                {(d.security.sellTax ?? 0) > 0 && ` · tax ${d.security.buyTax ?? 0}/${d.security.sellTax}%`}
+              </span>
+            ) : (
+              <span className="green" title={t('vol.secOkTip')}>
+                ✓ {t('vol.secOk')}
+                {' · '}
+                <span className="dim">
+                  {d.security.openSource ? 'src' : 'no-src'} · {d.security.renounced ? 'renounced' : 'owned'} · tax{' '}
+                  {d.security.buyTax ?? 0}/{d.security.sellTax ?? 0}
+                  {d.security.top10Rate != null && ` · top10 ${(d.security.top10Rate * 100).toFixed(0)}%`}
+                </span>
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       {tot && d?.buckets ? (

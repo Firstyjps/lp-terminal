@@ -15,6 +15,7 @@
 //             topic0, identical data words, so decode() is shared
 import { erc20Abi, parseAbi, parseAbiItem, toEventSelector } from 'viem'
 import { ADDR, BLOCKSCOUT, PUBLIC_RPC, log, now, sleep } from './config'
+import { securityOf } from './gmgn'
 import { mc, ok, pc } from './rpc'
 import { uniV2PairAbi, uniV3PoolAbi } from '../src/abi'
 import {
@@ -689,6 +690,10 @@ export function readVol(pool: string, hours: number): Record<string, unknown> {
   const swapsN = rows.filter((r) => r.ts >= from).length
   const traderless = rows.filter((r) => r.ts >= from && !r.trader).length
 
+  // GMGN verdict on the base token (null until fetched / without key)
+  const baseAddr = meta.quoteIs0 ? meta.t1 : meta.t0
+  const sec = securityOf(baseAddr)
+
   return {
     ...basePayload,
     meta: {
@@ -698,6 +703,18 @@ export function readVol(pool: string, hours: number): Record<string, unknown> {
       usd: usdOk,
       quoteUsd: qUsd,
     },
+    security: sec
+      ? {
+          honeypot: sec.honeypot === 1,
+          alert: sec.alert === 1,
+          sellTax: sec.sell_tax,
+          buyTax: sec.buy_tax,
+          openSource: sec.open_source === 1,
+          renounced: sec.renounced === 1,
+          top10Rate: sec.top10_rate,
+          known: sec.honeypot !== null,
+        }
+      : undefined,
     coverage: {
       fromTs: Math.max(cov.ft, from),
       toTs: cov.ct,

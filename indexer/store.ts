@@ -90,6 +90,19 @@ CREATE TABLE IF NOT EXISTS token_price_snaps (
   PRIMARY KEY (address, ts)
 );
 
+-- GMGN token-security verdict cache (gmgn.ts) — honeypot/tax gate
+CREATE TABLE IF NOT EXISTS token_security (
+  address     TEXT PRIMARY KEY,
+  honeypot    INTEGER,                  -- NULL = unknown (api miss)
+  alert       INTEGER,
+  sell_tax    REAL,
+  buy_tax     REAL,
+  open_source INTEGER,
+  renounced   INTEGER,
+  top10_rate  REAL,
+  updated     INTEGER NOT NULL
+);
+
 -- Birdeye gainers leaderboard cache (birdeye.ts) — smart-money annotation
 CREATE TABLE IF NOT EXISTS wallet_pnl (
   address     TEXT NOT NULL,
@@ -460,6 +473,32 @@ export const bestPoolOf = (token: string): { address: string; tvl_usd: number } 
   const a = token.toLowerCase()
   return bestPoolQ.get(a, a) as { address: string; tvl_usd: number } | undefined
 }
+
+// ---- token security (GMGN verdict cache) ----
+export type TokenSecurityRow = {
+  address: string
+  honeypot: number | null
+  alert: number | null
+  sell_tax: number | null
+  buy_tax: number | null
+  open_source: number | null
+  renounced: number | null
+  top10_rate: number | null
+  updated: number
+}
+const upSecQ = db.prepare(`
+  INSERT INTO token_security (address, honeypot, alert, sell_tax, buy_tax, open_source, renounced, top10_rate, updated)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(address) DO UPDATE SET honeypot = excluded.honeypot, alert = excluded.alert,
+    sell_tax = excluded.sell_tax, buy_tax = excluded.buy_tax, open_source = excluded.open_source,
+    renounced = excluded.renounced, top10_rate = excluded.top10_rate, updated = excluded.updated`)
+export const upsertTokenSecurity = (r: Omit<TokenSecurityRow, 'updated'>, updated: number) =>
+  void upSecQ.run(
+    r.address.toLowerCase(), r.honeypot, r.alert, r.sell_tax, r.buy_tax,
+    r.open_source, r.renounced, r.top10_rate, updated,
+  )
+const secQ = db.prepare('SELECT * FROM token_security WHERE address = ?')
+export const tokenSecurityRow = (addr: string) => secQ.get(addr.toLowerCase()) as TokenSecurityRow | undefined
 
 // ---- wallet pnl (Birdeye leaderboard cache) ----
 export type WalletPnlRow = {
