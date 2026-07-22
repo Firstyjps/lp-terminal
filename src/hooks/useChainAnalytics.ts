@@ -45,6 +45,35 @@ export const useDips = () =>
     },
   })
 
+export type SmartBuy = {
+  tx: string
+  wallet: string
+  token: string
+  symbol: string
+  ts: number
+  amount: number | null
+  usd: number | null
+  win: string | null
+  rank: number | null
+  pnl: number | null
+  alerted: number
+}
+export type SmartBuysData = { enabled: boolean; asof: number; buys: SmartBuy[] }
+
+/** on-chain buys by Birdeye-leaderboard wallets (empty without a key) */
+export const useSmartBuys = () =>
+  useQuery({
+    queryKey: ['smartbuys'],
+    refetchInterval: 300_000,
+    staleTime: 270_000,
+    retry: 1,
+    queryFn: async (): Promise<SmartBuysData> => {
+      const r = await fetch('/api/smartbuys', { headers: { accept: 'application/json' } })
+      if (!r.ok) throw new Error(`smartbuys ${r.status}`)
+      return r.json()
+    },
+  })
+
 export const useChainTvl = () => useQuery({ queryKey: ['llamaTvl'], queryFn: fetchChainTvl, ...opts })
 export const useDexOverview = () => useQuery({ queryKey: ['llamaDex'], queryFn: fetchDexOverview, ...opts })
 export const useFeesOverview = () => useQuery({ queryKey: ['llamaFees'], queryFn: fetchFeesOverview, ...opts })

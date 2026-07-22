@@ -103,6 +103,22 @@ CREATE TABLE IF NOT EXISTS token_security (
   updated     INTEGER NOT NULL
 );
 
+-- smart-money buys observed on-chain (smartbuys.ts) — 7d retention
+CREATE TABLE IF NOT EXISTS smart_buys (
+  tx      TEXT NOT NULL,
+  wallet  TEXT NOT NULL,
+  token   TEXT NOT NULL,
+  ts      INTEGER NOT NULL,
+  amount  REAL,                        -- token units
+  usd     REAL,                        -- NULL = token unpriced in our db
+  win     TEXT,                        -- leaderboard window the wallet came from
+  rank    INTEGER,
+  pnl     REAL,
+  alerted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (tx, wallet, token)
+);
+CREATE INDEX IF NOT EXISTS idx_sb_ts ON smart_buys(ts);
+
 -- Birdeye gainers leaderboard cache (birdeye.ts) — smart-money annotation
 CREATE TABLE IF NOT EXISTS wallet_pnl (
   address     TEXT NOT NULL,
@@ -499,6 +515,33 @@ export const upsertTokenSecurity = (r: Omit<TokenSecurityRow, 'updated'>, update
   )
 const secQ = db.prepare('SELECT * FROM token_security WHERE address = ?')
 export const tokenSecurityRow = (addr: string) => secQ.get(addr.toLowerCase()) as TokenSecurityRow | undefined
+
+// ---- smart buys ----
+export type SmartBuyRow = {
+  tx: string
+  wallet: string
+  token: string
+  ts: number
+  amount: number | null
+  usd: number | null
+  win: string | null
+  rank: number | null
+  pnl: number | null
+  alerted: number
+}
+const insBuyQ = db.prepare(`
+  INSERT OR IGNORE INTO smart_buys (tx, wallet, token, ts, amount, usd, win, rank, pnl, alerted)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+/** returns true when the row is new */
+export const insertSmartBuy = (r: Omit<SmartBuyRow, 'alerted'>, alerted: boolean): boolean =>
+  Number(
+    insBuyQ.run(r.tx, r.wallet.toLowerCase(), r.token.toLowerCase(), r.ts, r.amount, r.usd, r.win, r.rank, r.pnl, alerted ? 1 : 0)
+      .changes,
+  ) > 0
+export const recentSmartBuys = (sinceTs: number) =>
+  db.prepare('SELECT * FROM smart_buys WHERE ts >= ? ORDER BY ts DESC LIMIT 200').all(sinceTs) as SmartBuyRow[]
+export const pruneSmartBuys = (beforeTs: number): number =>
+  Number(db.prepare('DELETE FROM smart_buys WHERE ts < ?').run(beforeTs).changes)
 
 // ---- wallet pnl (Birdeye leaderboard cache) ----
 export type WalletPnlRow = {

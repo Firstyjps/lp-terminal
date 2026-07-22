@@ -7,6 +7,7 @@ import { aiEnabled, aiInsight } from './ai'
 import { PORT, log, now } from './config'
 import { smartMoney } from './birdeye'
 import { dipsLatest } from './dips'
+import { smartBuysLatest } from './smartbuys'
 import { db, kvGet, poolCounts, snapsFor, watchPosByOwner } from './store'
 import { VOL_HOURS, ensureVol, readVol } from './vol'
 import { tgEnabled, watchAddrs, watchEnabled } from './watch'
@@ -228,6 +229,9 @@ export function startApi(): void {
       } else if (url.pathname === '/api/smartmoney') {
         body = smartMoney()
         cache = 'public, max-age=300'
+      } else if (url.pathname === '/api/smartbuys') {
+        body = smartBuysLatest()
+        cache = 'public, max-age=60'
       }
       else if (url.pathname === '/api/health') {
         body = getHealth()

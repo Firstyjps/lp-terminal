@@ -11,6 +11,7 @@ import { usingPrivateRpc } from './rpc'
 import { birdeyeCycle, birdeyeEnabled } from './birdeye'
 import { backfillV3, syncV2, tailV3 } from './catalog'
 import { dipCycle } from './dips'
+import { smartBuysCycle, smartBuysEnabled } from './smartbuys'
 import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
 import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
@@ -102,6 +103,11 @@ async function boot(): Promise<void> {
     loop('birdeye', 1_800_000, birdeyeCycle)
   } else {
     log('[birdeye] disabled — set BIRDEYE_API_KEY in .env for smart-money PnL')
+  }
+  if (smartBuysEnabled()) {
+    log('[smartbuys] tape on — watching leaderboard wallets via blockscout')
+    await smartBuysCycle().catch((e) => log('[smartbuys] first cycle failed:', String(e).slice(0, 160)))
+    loop('smartbuys', 900_000, smartBuysCycle)
   }
   if (watchEnabled()) {
     log(`[watch] tracking ${watchAddrs().length} wallet(s) · telegram ${tgEnabled() ? 'on' : 'off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)'}`)

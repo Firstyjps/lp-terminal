@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAiInsight, useChainTvl, useDexOverview, useDips, useFeesOverview, useStables } from '../../hooks/useChainAnalytics'
+import { useAiInsight, useChainTvl, useDexOverview, useDips, useFeesOverview, useSmartBuys, useStables } from '../../hooks/useChainAnalytics'
 import { currentLang } from '../../i18n'
 import type { SeriesPoint } from '../../lib/llama'
 import { fmtCompact, fmtNum, fmtUsd } from '../../lib/format'
@@ -150,6 +150,7 @@ export function AnalyzeTab() {
   const stables = useStables()
   const ai = useAiInsight()
   const dips = useDips()
+  const sb = useSmartBuys()
   const [range, setRange] = useState<Range>(30)
   const [sort, setSort] = useState<ProtoSort>('vol24')
   // collapsed states persist like the watchlist / theme prefs
@@ -461,6 +462,50 @@ export function AnalyzeTab() {
           </div>
           <div className="dim mono-sm" style={{ margin: '4px 0 10px' }}>
             {t('an.dipsNote')}
+          </div>
+        </>
+      )}
+      {sb.data?.enabled && sb.data.buys.length > 0 && (
+        <>
+          <div className="section-title">{t('an.smartBuys', { n: sb.data.buys.length })}</div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>{t('an.thSbTime')}</th>
+                  <th>{t('an.thDipToken')}</th>
+                  <th className="num">{t('an.thSbUsd')}</th>
+                  <th>{t('an.thSbWallet')}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sb.data.buys.slice(0, 15).map((b) => (
+                  <tr key={b.tx + b.token} className="rowhover">
+                    <td className="mono-sm dim">
+                      {new Date(b.ts * 1000).toTimeString().slice(0, 5)}
+                      {b.alerted === 1 && <span title="alerted"> 🔔</span>}
+                    </td>
+                    <td>
+                      <b>{b.symbol}</b> <span className="dim mono-sm">{b.token.slice(0, 6)}…{b.token.slice(-4)}</span>
+                    </td>
+                    <td className="num">{b.usd != null ? fmtUsdC(b.usd) : <span className="dim">—</span>}</td>
+                    <td className="mono-sm">
+                      <span className="green">#{b.rank}</span> <span className="dim">{b.win}</span>
+                      {b.pnl != null && <span className="dim"> · pnl {fmtUsdC(b.pnl)}</span>}
+                    </td>
+                    <td className="num">
+                      <a href={`https://gmgn.ai/robinhood/token/${b.token}`} target="_blank" rel="noreferrer" className="dim">
+                        gmgn ↗
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="dim mono-sm" style={{ margin: '4px 0 10px' }}>
+            {t('an.smartBuysNote')}
           </div>
         </>
       )}
